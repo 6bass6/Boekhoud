@@ -7,6 +7,7 @@ mod format;
 mod invoicing;
 mod messages;
 mod platforms;
+mod tax;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -332,7 +333,24 @@ pub fn run() {
             bank::bank_suggestions,
             bank::process_bank_transaction,
             bank::reopen_bank_transaction,
-            bank::bank_reconciliation
+            bank::bank_reconciliation,
+            tax::dashboard,
+            tax::vat_return,
+            tax::vat_return_detail,
+            tax::icp_listing,
+            tax::file_vat_return,
+            tax::platform_contact,
+            tax::set_platform_contact,
+            tax::time_entries,
+            tax::save_time_entry,
+            tax::delete_time_entry,
+            tax::start_timer,
+            tax::stop_timer,
+            tax::running_timer,
+            tax::hours_summary,
+            tax::add_asset,
+            tax::assets,
+            tax::post_depreciation
         ])
         .run(tauri::generate_context!())
         .expect("error while running Boekhoud");

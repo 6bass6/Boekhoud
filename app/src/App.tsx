@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { api } from "./api";
 import { useLoad } from "./hooks";
+import { Assets } from "./views/Assets";
 import { Bank } from "./views/Bank";
+import { DashboardView } from "./views/Dashboard";
+import { Hours } from "./views/Hours";
+import { Vat } from "./views/Vat";
 import { Contacts } from "./views/Contacts";
 import { Entries } from "./views/Entries";
 import { Platforms } from "./views/Platforms";
@@ -11,9 +15,10 @@ import { NewEntry } from "./views/NewEntry";
 import { ChartOfAccounts, LedgerCardView, TrialBalance } from "./views/Reports";
 import { Periods, Settings } from "./views/Settings";
 
-type View = "verkoop" | "inkoop" | "platformen" | "bank" | "contacten" | "boekingen" | "nieuw" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
+type View = "overzicht" | "btw" | "uren" | "activa" | "verkoop" | "inkoop" | "platformen" | "bank" | "contacten" | "boekingen" | "nieuw" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
 
 const nav: { view: View; label: string; section?: string }[] = [
+  { view: "overzicht", label: "Overzicht" },
   { view: "verkoop", label: "Verkoopfacturen", section: "Administratie" },
   { view: "inkoop", label: "Inkoopfacturen" },
   { view: "platformen", label: "Platformen" },
@@ -21,6 +26,9 @@ const nav: { view: View; label: string; section?: string }[] = [
   { view: "contacten", label: "Contacten" },
   { view: "boekingen", label: "Boekingen", section: "Boekhouding" },
   { view: "nieuw", label: "Nieuwe boeking" },
+  { view: "btw", label: "Btw-aangifte", section: "Belastingen" },
+  { view: "uren", label: "Uren" },
+  { view: "activa", label: "Activa" },
   { view: "proefbalans", label: "Proef- en saldibalans", section: "Overzichten" },
   { view: "grootboek", label: "Grootboekkaart" },
   { view: "perioden", label: "Perioden", section: "Beheer" },
@@ -29,7 +37,7 @@ const nav: { view: View; label: string; section?: string }[] = [
 ];
 
 export function App() {
-  const [view, setView] = useState<View>("verkoop");
+  const [view, setView] = useState<View>("overzicht");
   const [year, setYear] = useState(new Date().getFullYear());
   const [account, setAccount] = useState("");
   const info = useLoad(() => api.appInfo(), []);
@@ -55,6 +63,10 @@ export function App() {
       </nav>
       <main>
         {info.error && <p className="error">{info.error}</p>}
+        {view === "overzicht" && <DashboardView year={year} go={(v) => setView(v as View)} />}
+        {view === "btw" && <Vat year={year} />}
+        {view === "uren" && <Hours year={year} />}
+        {view === "activa" && <Assets />}
         {view === "verkoop" && <SalesInvoices year={year} />}
         {view === "inkoop" && <Purchases year={year} />}
         {view === "platformen" && <Platforms year={year} />}

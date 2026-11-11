@@ -27,8 +27,10 @@ plan still apply; only the technical realisation changes.
 ```
 boekhoud/
 ├── crates/
-│   ├── boekhoud-core/     # pure domain logic: Money, accounts, journal entries, validation, hashing
-│   └── boekhoud-db/       # SQLite schema, migrations, repositories, posting, trial balance
+│   ├── boekhoud-core/     # pure domain logic: Money, journal entries, validation, hashing, invoice arithmetic
+│   ├── boekhoud-db/       # SQLite schema, migrations, posting, invoices, bank, platforms, VAT, hours, assets
+│   ├── boekhoud-import/   # parsers: Apple/Google reports, CAMT.053, bank CSV (pure, no I/O)
+│   └── boekhoud-pdf/      # invoice PDF with standard fonts
 ├── app/                   # Tauri 2 application
 │   ├── src-tauri/         # Rust side: commands exposing core/db to the UI
 │   └── src/               # React + TypeScript UI (Vite)
@@ -39,9 +41,9 @@ boekhoud/
 └── .github/workflows/     # CI: tests on Linux, Windows .exe build
 ```
 
-Planned future crates (added when their phase starts, not before):
-`boekhoud-vat`, `boekhoud-invoicing`, `boekhoud-import` (CAMT.053, CSV, UBL, Apple/Google reports),
-`boekhoud-documents`, `boekhoud-reports` (incl. XAF export), `boekhoud-tax` (IB-prognose).
+Planned future crates (added when their phase starts, not before): `boekhoud-reports` (incl. XAF export),
+`boekhoud-tax` (IB-prognose). Inside `boekhoud-db` each domain has its own module (`sales`, `purchases`,
+`bank`, `platforms`, `vat`, `hours`, `assets`, `documents`); all postings go through `post_in_tx`.
 
 Dependency rule: `core` depends on nothing internal. Every other crate may depend on `core`.
 Only `boekhoud-db` talks to SQLite. The Tauri layer is thin: it validates input and calls crate functions.
@@ -70,8 +72,11 @@ All tables carry `created_at`; mutable tables also `updated_at`. Primary keys ar
   lookups fall back to the most recent earlier date.
 - `schema_migrations` – applied migration versions.
 
-Later phases add: contacts, invoices, purchase invoices, documents, bank transactions and matches,
-tax codes and VAT periods, platform reports/payouts, assets, time entries, exchange rates.
+Later migrations add (see `crates/boekhoud-db/migrations/`): contacts, documents, sales and purchase
+invoices, payments (0004); platform configuration and reports (0005); bank accounts, imports and
+transactions (0006); filed VAT returns, time entries and assets (0007). Issued invoices, registered
+purchases, payments, booked platform reports, imported bank facts, filed VAT returns and documents are
+protected by triggers in the same way as posted entries.
 
 ### Invariants enforced in code *and* in the database
 

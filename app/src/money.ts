@@ -81,3 +81,9 @@ export function lineNet(quantityMilli: number, unitPriceCents: number): number {
   const v = 2 * (abs - q * 1000) >= 1000 ? q + 1 : q;
   return product < 0 ? -v : v;
 }
+
+/** 90 -> "1:30" */
+export function formatMinutes(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  return `${h}:${String(minutes % 60).padStart(2, "0")}`;
+}

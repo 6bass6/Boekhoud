@@ -250,3 +250,98 @@ impl Ledger {
             .collect())
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Dashboard {
+    pub year: i32,
+    pub revenue_cents: i64,
+    pub expenses_cents: i64,
+    pub result_cents: i64,
+    pub bank_cents: i64,
+    pub receivables_open_cents: i64,
+    pub receivables_overdue: i64,
+    pub platform_receivable_cents: i64,
+    pub payables_open_cents: i64,
+    /// Positive = VAT to pay (all VAT accounts incl. settlement account).
+    pub vat_position_cents: i64,
+    pub bank_unprocessed: i64,
+    pub purchases_without_document: i64,
+    pub draft_invoices: i64,
+    pub unbooked_platform_reports: i64,
+    pub hours_minutes: i64,
+    pub revenue_by_month: Vec<i64>,
+    pub expenses_by_month: Vec<i64>,
+}
+
+impl Ledger {
+    pub fn dashboard(&self, year: i32, today: NaiveDate) -> Result<Dashboard> {
+        let sum_type = |t: &str| -> Result<i64> {
+            Ok(self.conn.query_row(
+                "SELECT COALESCE(SUM(l.amount_cents), 0) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id
+                 JOIN account a ON a.number = l.account
+                 WHERE e.status = 'posted' AND a.account_type = ?1 AND e.fiscal_year = ?2",
+                params![t, year],
+                |r| r.get(0),
+            )?)
+        };
+        let by_month = |t: &str| -> Result<Vec<i64>> {
+            let mut v = vec![0i64; 12];
+            let mut stmt = self.conn.prepare(
+                "SELECT CAST(strftime('%m', e.entry_date) AS INTEGER), SUM(l.amount_cents) FROM journal_line l
+                 JOIN journal_entry e ON e.id = l.entry_id JOIN account a ON a.number = l.account
+                 WHERE e.status = 'posted' AND a.account_type = ?1 AND e.fiscal_year = ?2 GROUP BY 1",
+            )?;
+            for row in stmt.query_map(params![t, year], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
+                let (m, s) = row?;
+                v[(m - 1) as usize] = if t == "revenue" { -s } else { s };
+            }
+            Ok(v)
+        };
+        let balance = |where_clause: &str| -> Result<i64> {
+            Ok(self.conn.query_row(
+                &format!(
+                    "SELECT COALESCE(SUM(l.amount_cents), 0) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id
+                     JOIN account a ON a.number = l.account WHERE e.status = 'posted' AND {where_clause}"
+                ),
+                [],
+                |r| r.get(0),
+            )?)
+        };
+        let count = |sql: &str| -> Result<i64> { Ok(self.conn.query_row(sql, [], |r| r.get(0))?) };
+        let revenue = -sum_type("revenue")?;
+        let expenses = sum_type("expense")?;
+        let sales = self.sales_invoices(None)?;
+        let open_sales: Vec<_> = sales
+            .iter()
+            .filter(|s| s.status == "issued" && !s.is_credit_note && s.open_cents != 0)
+            .collect();
+        let purchases = self.purchase_invoices(None)?;
+        let today_s = today.format("%Y-%m-%d").to_string();
+        Ok(Dashboard {
+            year,
+            revenue_cents: revenue,
+            expenses_cents: expenses,
+            result_cents: revenue - expenses,
+            bank_cents: balance("l.account IN (SELECT ledger_account FROM bank_account UNION SELECT '1100')")?,
+            receivables_open_cents: open_sales.iter().map(|s| s.open_cents).sum(),
+            receivables_overdue: open_sales.iter().filter(|s| s.due_date.format("%Y-%m-%d").to_string() < today_s).count() as i64,
+            platform_receivable_cents: balance("l.account IN (SELECT receivable_account FROM platform_config)")?,
+            payables_open_cents: purchases.iter().map(|p| p.open_cents).sum(),
+            vat_position_cents: -balance("(a.is_vat = 1 OR l.account = '1520')")?,
+            bank_unprocessed: count(
+                "SELECT COUNT(*) FROM bank_transaction t WHERE t.status = 'open' AND (t.entry_id IS NULL
+                   OR EXISTS (SELECT 1 FROM journal_entry r WHERE r.reverses_entry_id = t.entry_id))",
+            )?,
+            purchases_without_document: purchases.iter().filter(|p| !p.has_document && p.state != "reversed").count() as i64,
+            draft_invoices: sales.iter().filter(|s| s.status == "draft").count() as i64,
+            unbooked_platform_reports: count("SELECT COUNT(*) FROM platform_report WHERE entry_id IS NULL")?,
+            hours_minutes: self.conn.query_row(
+                "SELECT COALESCE(SUM(minutes), 0) FROM time_entry WHERE CAST(strftime('%Y', entry_date) AS INTEGER) = ?1",
+                [year],
+                |r| r.get(0),
+            )?,
+            revenue_by_month: by_month("revenue")?,
+            expenses_by_month: by_month("expense")?,
+        })
+    }
+}

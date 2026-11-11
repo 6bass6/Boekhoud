@@ -12,6 +12,7 @@ pub const MIGRATIONS: &[(u32, &str)] = &[
     (4, include_str!("../migrations/0004_invoicing_documents.sql")),
     (5, include_str!("../migrations/0005_platforms.sql")),
     (6, include_str!("../migrations/0006_bank.sql")),
+    (7, include_str!("../migrations/0007_tax_hours_assets.sql")),
 ];
 
 fn ensure_table(conn: &Connection) -> Result<()> {

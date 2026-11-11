@@ -246,7 +246,35 @@ onder de KOR. **[TOETSEN: inkoop met verlegde btw onder de KOR heeft eigen codes
   Opdrachtgevers die zelf btw-ondernemer zijn hebben geen voordeel van de KOR.
 - De applicatie ondersteunt beide regimes met ingangsdatum, zodat een overstap correct wordt verwerkt.
 
-## 6. Open vragen voor de boekhouder
+## 6. Hoe de applicatie deze regels toepast
+
+- **Verkoopfacturen:** btw per btw-code over het totaal van de regels, afgerond op centen (half naar
+  boven). Bij uitreiken: D 1300 / C omzet per rekening en code / C 1510 of 1511 met code.
+  Creditnota = factuur met negatieve aantallen die verwijst naar de originele factuur; die is daarmee
+  verrekend. Vóór uitreiken controleert de applicatie: adres, KvK-nummer en (behalve onder de KOR)
+  btw-id van de onderneming, adres van de klant, en bij btw verlegd het btw-id van de klant.
+- **Inkoopfacturen:** btw-bedrag van de factuur wordt overgenomen (voorstel = tarief × netto).
+  Verlegde btw (IEU/INEU): D 1500 en C 1515 met dezelfde code; aan de leverancier is alleen netto
+  verschuldigd. "Privé betaald" boekt de tegenrekening op 0510 in plaats van 1600.
+- **Platformen:** per rapport één boeking op de laatste dag van de rapportperiode; per valuta het
+  euro-bedrag uit Apple Payments (Google rapporteert al in euro). De uitbetaling via de bank vereffent
+  1310/1320; een verschil gaat naar 9000 Koersverschillen.
+- **Bank:** banktransacties zijn geen boekingen. Bij verwerken direct op een rekening met btw-code
+  wordt de btw uit het bedrag gehaald (netto = bruto × 100 / (100 + tarief), afgerond).
+- **Btw-aangifte:** alleen regels met btw-code tellen mee. Grondslag van verkoopcodes in de rubriek van
+  de code, btw op de betaalrekening van de code; voorbelasting (5b) op de aftrekrekening. Afronding
+  naar hele euro's in je voordeel. Vastleggen boekt de btw-saldi van de periode over naar 1520 en sluit
+  de maanden af. **[TOETSEN: 1e voor diensten aan ondernemers buiten de EU]**
+- **ICP:** grondslag van regels met een ICP-code, per afnemer (btw-id uit het contact van de factuur,
+  of het contact dat aan het platform is gekoppeld).
+- **Afschrijving:** lineair per maand vanaf de aanschafmaand, laatste maand vangt afronding op;
+  D 4800 / C 0110. Percentage zakelijk gebruik wordt vastgelegd maar nog niet verwerkt.
+  **[TOETSEN: privégebruik bedrijfsmiddelen]**
+- **Uren:** urencriterium 1.225 uur per kalenderjaar; alle uren voor de onderneming tellen mee.
+  Met een baan in loondienst geldt daarnaast dat je meer tijd aan de onderneming moet besteden dan
+  aan de baan (lees de actuele voorwaarden bij de Belastingdienst). **[TOETSEN]**
+
+## 7. Open vragen voor de boekhouder
 
 1. Netto (proceeds) of bruto (verkopen − commissie) verantwoorden voor Apple/Google? (S1)
 2. Bevestiging rubriek 3b + ICP voor Apple- en Google-opbrengsten; behandeling bij KOR.

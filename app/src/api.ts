@@ -290,6 +290,46 @@ export interface Reconciliation {
   ledger_balance_cents: number;
 }
 
+export interface Dashboard {
+  year: number;
+  revenue_cents: number;
+  expenses_cents: number;
+  result_cents: number;
+  bank_cents: number;
+  receivables_open_cents: number;
+  receivables_overdue: number;
+  platform_receivable_cents: number;
+  payables_open_cents: number;
+  vat_position_cents: number;
+  bank_unprocessed: number;
+  purchases_without_document: number;
+  draft_invoices: number;
+  unbooked_platform_reports: number;
+  hours_minutes: number;
+  revenue_by_month: number[];
+  expenses_by_month: number[];
+}
+export interface RubricLine { rubric: string; label: string; base_cents: number; vat_cents: number }
+export interface VatReturn {
+  period_start: string;
+  period_end: string;
+  rubrics: RubricLine[];
+  due_cents: number;
+  input_vat_cents: number;
+  balance_cents: number;
+  rounded: { rubrics: [string, number, number][]; due: number; input_vat: number; balance: number };
+  warnings: string[];
+  filed: { id: string; filed_at: string; entry_id: string | null } | null;
+}
+export interface VatDetailLine { entry_id: string; entry_number: string; date: string; description: string; account: string; tax_code: string; base_cents: number; vat_cents: number }
+export interface IcpLine { vat_number: string | null; name: string; country: string | null; services_cents: number }
+export interface TimeEntry { id: string; entry_date: string; started_at: string | null; minutes: number | null; activity: string; project: string | null; description: string | null }
+export interface HoursSummary { year: number; total_minutes: number; by_month: number[]; by_activity: [string, number][]; criterion_hours: number; needed_per_week_minutes: number }
+export interface AssetView {
+  id: string; name: string; acquisition_date: string; cost_cents: number; residual_cents: number; months: number;
+  start_month: string; business_use_pct: number; monthly_cents: number; depreciated_cents: number; book_value_cents: number; months_posted: number; notes: string | null;
+}
+
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   accounts: () => invoke<Account[]>("accounts"),
@@ -348,6 +388,25 @@ export const api = {
   processBankTransaction: (id: string, action: BankAction) => invoke<BankTransaction>("process_bank_transaction", { id, action }),
   reopenBankTransaction: (id: string) => invoke<void>("reopen_bank_transaction", { id }),
   bankReconciliation: (accountId: string) => invoke<Reconciliation>("bank_reconciliation", { accountId }),
+  dashboard: (year: number) => invoke<Dashboard>("dashboard", { year }),
+  vatReturn: (start: string, end: string) => invoke<VatReturn>("vat_return", { start, end }),
+  vatReturnDetail: (start: string, end: string, rubric: string) => invoke<VatDetailLine[]>("vat_return_detail", { start, end, rubric }),
+  icpListing: (start: string, end: string) => invoke<IcpLine[]>("icp_listing", { start, end }),
+  fileVatReturn: (start: string, end: string) => invoke<string>("file_vat_return", { start, end }),
+  platformContact: (platform: string) => invoke<string | null>("platform_contact", { platform }),
+  setPlatformContact: (platform: string, contactId: string | null) => invoke<void>("set_platform_contact", { platform, contactId }),
+  timeEntries: (year: number) => invoke<TimeEntry[]>("time_entries", { year }),
+  saveTimeEntry: (entry: { id: string | null; entry_date: string; hours: string; activity: string; project: string | null; description: string | null }) =>
+    invoke<string>("save_time_entry", { entry }),
+  deleteTimeEntry: (id: string) => invoke<void>("delete_time_entry", { id }),
+  startTimer: (activity: string, description: string | null) => invoke<string>("start_timer", { activity, description }),
+  stopTimer: () => invoke<TimeEntry>("stop_timer"),
+  runningTimer: () => invoke<TimeEntry | null>("running_timer"),
+  hoursSummary: (year: number) => invoke<HoursSummary>("hours_summary", { year }),
+  addAsset: (asset: { name: string; acquisition_date: string; cost: string; residual: string; years: string; business_use_pct: number; notes: string | null }) =>
+    invoke<string>("add_asset", { asset }),
+  assets: () => invoke<AssetView[]>("assets"),
+  postDepreciation: (until: string) => invoke<number>("post_depreciation", { until }),
   platformRevenueByProduct: (year: number) => invoke<[string, string, string, number, number][]>("platform_revenue_by_product", { year }),
 };
 

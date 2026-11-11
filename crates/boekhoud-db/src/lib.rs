@@ -3,16 +3,19 @@
 //!
 //! [`Ledger::post`] is the only way to create posted journal entries.
 
+mod assets;
 mod bank;
 mod company;
 mod contacts;
 mod documents;
+mod hours;
 mod migrations;
 mod platforms;
 mod purchases;
 mod queries;
 mod sales;
 mod tax;
+mod vat;
 
 use std::path::Path;
 
@@ -24,6 +27,7 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 use thiserror::Error;
 
+pub use assets::{depreciation_for_month, AssetInput, AssetView};
 pub use bank::{
     split_gross, BankAccount, BankAction, BankImportInput, BankImportResult, BankTransactionView, NewBankTransaction,
     Reconciliation, Suggestion,
@@ -31,14 +35,16 @@ pub use bank::{
 pub use company::Company;
 pub use contacts::Contact;
 pub use documents::{mime_from_filename, DocumentInfo};
+pub use hours::{HoursSummary, TimeEntry, HOURS_CRITERION};
 pub use migrations::MIGRATIONS;
 pub use platforms::{
     CurrencyAmount, EurAmount, PlatformConfig, PlatformReportInput, PlatformReportView, ProductAmount, ProductRevenue,
 };
 pub use purchases::{PurchaseInput, PurchaseInvoiceDetail, PurchaseInvoiceSummary};
-pub use queries::{EntryDetail, EntrySummary, LedgerCard, LedgerCardRow, LineView, PeriodView};
+pub use queries::{Dashboard, EntryDetail, EntrySummary, LedgerCard, LedgerCardRow, LineView, PeriodView};
 pub use sales::{IssueRequirements, SalesInvoiceDetail, SalesInvoiceInput, SalesInvoiceSummary};
 pub use tax::{TaxCode, VatRegime};
+pub use vat::{quarter_of, FiledInfo, IcpLine, RubricLine, VatDetailLine, VatReturn};
 
 #[derive(Debug, Error)]
 pub enum DbError {
