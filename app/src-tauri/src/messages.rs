@@ -44,5 +44,13 @@ pub fn db_nl(e: &DbError) -> String {
         DbError::AlreadyReversed(_) => "Deze boeking is al tegengeboekt.".into(),
         DbError::Corrupt(what) => format!("Onverwachte gegevens in de database: {what}."),
         DbError::Sqlite(err) => format!("Databasefout: {err}."),
+        DbError::Invalid(msg) => {
+            let mut c = msg.chars();
+            match c.next() {
+                Some(f) => format!("{}{}.", f.to_uppercase(), c.as_str()),
+                None => String::new(),
+            }
+        }
+        DbError::Io(msg) => format!("Bestandsfout: {msg}."),
     }
 }

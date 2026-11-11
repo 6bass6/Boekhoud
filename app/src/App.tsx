@@ -1,25 +1,31 @@
 import { useState } from "react";
 import { api } from "./api";
 import { useLoad } from "./hooks";
+import { Contacts } from "./views/Contacts";
 import { Entries } from "./views/Entries";
+import { Purchases } from "./views/Purchases";
+import { SalesInvoices } from "./views/SalesInvoices";
 import { NewEntry } from "./views/NewEntry";
 import { ChartOfAccounts, LedgerCardView, TrialBalance } from "./views/Reports";
 import { Periods, Settings } from "./views/Settings";
 
-type View = "boekingen" | "nieuw" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
+type View = "verkoop" | "inkoop" | "contacten" | "boekingen" | "nieuw" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
 
-const nav: { view: View; label: string }[] = [
-  { view: "boekingen", label: "Boekingen" },
+const nav: { view: View; label: string; section?: string }[] = [
+  { view: "verkoop", label: "Verkoopfacturen", section: "Administratie" },
+  { view: "inkoop", label: "Inkoopfacturen" },
+  { view: "contacten", label: "Contacten" },
+  { view: "boekingen", label: "Boekingen", section: "Boekhouding" },
   { view: "nieuw", label: "Nieuwe boeking" },
-  { view: "proefbalans", label: "Proef- en saldibalans" },
+  { view: "proefbalans", label: "Proef- en saldibalans", section: "Overzichten" },
   { view: "grootboek", label: "Grootboekkaart" },
-  { view: "perioden", label: "Perioden" },
+  { view: "perioden", label: "Perioden", section: "Beheer" },
   { view: "rekeningschema", label: "Rekeningschema" },
   { view: "instellingen", label: "Instellingen" },
 ];
 
 export function App() {
-  const [view, setView] = useState<View>("boekingen");
+  const [view, setView] = useState<View>("verkoop");
   const [year, setYear] = useState(new Date().getFullYear());
   const [account, setAccount] = useState("");
   const info = useLoad(() => api.appInfo(), []);
@@ -36,12 +42,18 @@ export function App() {
           </select>
         </label>
         {nav.map((n) => (
-          <button key={n.view} className={view === n.view ? "active" : ""} onClick={() => setView(n.view)}>{n.label}</button>
+          <div key={n.view} className="nav-item">
+            {n.section && <div className="nav-section">{n.section}</div>}
+            <button className={view === n.view ? "active" : ""} onClick={() => setView(n.view)}>{n.label}</button>
+          </div>
         ))}
         <footer>{info.data && <small>v{info.data.version}<br />{info.data.data_dir}</small>}</footer>
       </nav>
       <main>
         {info.error && <p className="error">{info.error}</p>}
+        {view === "verkoop" && <SalesInvoices year={year} />}
+        {view === "inkoop" && <Purchases year={year} />}
+        {view === "contacten" && <Contacts />}
         {view === "boekingen" && <Entries year={year} />}
         {view === "nieuw" && <NewEntry onPosted={() => undefined} />}
         {view === "proefbalans" && <TrialBalance year={year} onOpenAccount={openAccount} />}

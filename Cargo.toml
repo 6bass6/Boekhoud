@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/boekhoud-core", "crates/boekhoud-db", "app/src-tauri"]
+members = ["crates/boekhoud-core", "crates/boekhoud-db", "crates/boekhoud-pdf", "app/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

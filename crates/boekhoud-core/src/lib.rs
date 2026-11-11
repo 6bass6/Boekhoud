@@ -2,6 +2,7 @@
 
 pub mod account;
 pub mod hash;
+pub mod invoice;
 pub mod journal;
 pub mod money;
 

@@ -16,6 +16,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 boekhoud-core.workspace = true
 boekhoud-db.workspace = true
+boekhoud-pdf = { path = "../../crates/boekhoud-pdf" }
+base64 = "0.22"
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true

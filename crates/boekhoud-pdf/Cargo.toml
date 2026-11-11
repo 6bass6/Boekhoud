@@ -1,0 +1,10 @@
+[package]
+name = "boekhoud-pdf"
+description = "PDF rendering for invoices (standard PDF fonts, no font files needed)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+pdf-writer = "0.13"

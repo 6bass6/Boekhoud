@@ -45,6 +45,7 @@ export function Periods({ year }: { year: number }) {
 }
 
 const emptyCompany: Company = {
+  iban: null, email: null, payment_term_days: 30,
   legal_name: "", trade_name: null, kvk_number: null, vat_number: null,
   address: null, postal_code: null, city: null, country: "NL",
 };
@@ -83,6 +84,12 @@ export function Settings() {
         {field("postal_code", "Postcode")}
         {field("city", "Plaats")}
         {field("country", "Land")}
+        {field("iban", "IBAN (voor op facturen)")}
+        {field("email", "E-mail")}
+        <label>Betaaltermijn (dagen)
+          <input type="number" min={0} max={365} value={company.payment_term_days}
+                 onChange={(e) => setCompany({ ...company, payment_term_days: Number(e.target.value) || 0 })} />
+        </label>
       </div>
       <button className="primary" onClick={() => report(api.saveCompany(company), "Ondernemingsgegevens opgeslagen.")}>Opslaan</button>
 

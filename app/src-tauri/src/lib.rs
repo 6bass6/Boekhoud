@@ -2,6 +2,8 @@
 //! Keep this thin — business rules belong in `boekhoud-core` / `boekhoud-db`.
 //! Amounts arrive from the UI as text and are parsed here with `Money::parse`, never as floats.
 
+mod format;
+mod invoicing;
 mod messages;
 
 use std::path::{Path, PathBuf};
@@ -16,9 +18,9 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
-struct AppState {
+pub(crate) struct AppState {
     ledger: Mutex<Ledger>,
-    data_dir: PathBuf,
+    pub(crate) data_dir: PathBuf,
 }
 
 #[derive(Serialize)]
@@ -27,7 +29,7 @@ struct AppInfo {
     data_dir: String,
 }
 
-type CmdResult<T> = Result<T, String>;
+pub(crate) type CmdResult<T> = Result<T, String>;
 
 /// Format cents for messages, e.g. -1234 -> "-€ 12,34".
 pub(crate) fn format_cents(cents: i64) -> String {
@@ -36,7 +38,7 @@ pub(crate) fn format_cents(cents: i64) -> String {
     format!("{sign}€ {},{:02}", abs / 100, abs % 100)
 }
 
-fn with_ledger<T>(
+pub(crate) fn with_ledger<T>(
     state: &State<AppState>,
     f: impl FnOnce(&mut Ledger) -> boekhoud_db::Result<T>,
 ) -> CmdResult<T> {
@@ -47,7 +49,7 @@ fn with_ledger<T>(
     f(&mut ledger).map_err(|e| messages::db_nl(&e))
 }
 
-fn parse_date(s: &str) -> CmdResult<NaiveDate> {
+pub(crate) fn parse_date(s: &str) -> CmdResult<NaiveDate> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| format!("Ongeldige datum: {s}"))
 }
 
@@ -233,6 +235,9 @@ fn save_company(state: State<AppState>, company: Company) -> CmdResult<()> {
         } else {
             company.country.trim().to_uppercase()
         },
+        iban: non_empty(company.iban),
+        email: non_empty(company.email),
+        payment_term_days: company.payment_term_days,
     };
     with_ledger(&state, |l| l.save_company(&company))
 }
@@ -315,7 +320,26 @@ pub fn run() {
             save_company,
             vat_regime,
             set_vat_regime,
-            backup_now
+            backup_now,
+            invoicing::contacts,
+            invoicing::save_contact,
+            invoicing::sales_invoices,
+            invoicing::sales_invoice,
+            invoicing::save_sales_invoice,
+            invoicing::delete_sales_invoice,
+            invoicing::sales_issue_requirements,
+            invoicing::issue_sales_invoice,
+            invoicing::create_credit_note,
+            invoicing::register_sales_payment,
+            invoicing::open_sales_invoice_pdf,
+            invoicing::register_purchase_invoice,
+            invoicing::purchase_invoices,
+            invoicing::purchase_invoice,
+            invoicing::attach_purchase_document,
+            invoicing::register_purchase_payment,
+            invoicing::upload_document,
+            invoicing::document_content,
+            invoicing::open_document
         ])
         .run(tauri::generate_context!())
         .expect("error while running Boekhoud");

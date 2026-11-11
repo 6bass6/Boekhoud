@@ -55,7 +55,7 @@ pub struct TaxCode {
 const TAX_CODE_COLS: &str =
     "code, valid_from, valid_until, name, kind, rate_bp, rubric, icp, reverse_charge, regime, note";
 
-fn date_col(row: &Row, i: usize) -> rusqlite::Result<NaiveDate> {
+pub(crate) fn date_col(row: &Row, i: usize) -> rusqlite::Result<NaiveDate> {
     let s: String = row.get(i)?;
     NaiveDate::parse_from_str(&s, "%Y-%m-%d").map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(i, rusqlite::types::Type::Text, e.into())
@@ -90,7 +90,7 @@ fn tax_code_from_row(row: &Row) -> rusqlite::Result<TaxCode> {
     })
 }
 
-fn iso(d: NaiveDate) -> String {
+pub(crate) fn iso(d: NaiveDate) -> String {
     d.format("%Y-%m-%d").to_string()
 }
 
@@ -107,6 +107,27 @@ pub(crate) fn code_on(conn: &Connection, code: &str, date: NaiveDate) -> Result<
             tax_code_from_row,
         )
         .optional()?)
+}
+
+/// Posting rules for all VAT codes valid on `date`.
+pub(crate) fn vat_rules_on(
+    conn: &Connection,
+    date: NaiveDate,
+) -> Result<Vec<boekhoud_core::invoice::VatRule>> {
+    let mut stmt = conn.prepare(
+        "SELECT code, rate_bp, payable_account, deductible_account, reverse_charge FROM tax_code
+         WHERE valid_from <= ?1 AND (valid_until IS NULL OR valid_until >= ?1)",
+    )?;
+    let rows = stmt.query_map([iso(date)], |r| {
+        Ok(boekhoud_core::invoice::VatRule {
+            code: r.get(0)?,
+            rate_bp: r.get(1)?,
+            payable_account: r.get(2)?,
+            deductible_account: r.get(3)?,
+            reverse_charge: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
 /// The VAT regime in force on `date`. Defaults to regular when nothing is configured.
@@ -133,6 +154,10 @@ impl Ledger {
         ))?;
         let rows = stmt.query_map([iso(date)], tax_code_from_row)?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    pub fn vat_rules_on(&self, date: NaiveDate) -> Result<Vec<boekhoud_core::invoice::VatRule>> {
+        vat_rules_on(&self.conn, date)
     }
 
     pub fn tax_code_on(&self, code: &str, date: NaiveDate) -> Result<Option<TaxCode>> {

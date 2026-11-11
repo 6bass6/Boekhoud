@@ -4,8 +4,12 @@
 //! [`Ledger::post`] is the only way to create posted journal entries.
 
 mod company;
+mod contacts;
+mod documents;
 mod migrations;
+mod purchases;
 mod queries;
+mod sales;
 mod tax;
 
 use std::path::Path;
@@ -21,8 +25,12 @@ use serde::Serialize;
 use thiserror::Error;
 
 pub use company::Company;
+pub use contacts::Contact;
+pub use documents::{mime_from_filename, DocumentInfo};
 pub use migrations::MIGRATIONS;
+pub use purchases::{PurchaseInput, PurchaseInvoiceDetail, PurchaseInvoiceSummary};
 pub use queries::{EntryDetail, EntrySummary, LedgerCard, LedgerCardRow, LineView, PeriodView};
+pub use sales::{IssueRequirements, SalesInvoiceDetail, SalesInvoiceInput, SalesInvoiceSummary};
 pub use tax::{TaxCode, VatRegime};
 
 #[derive(Debug, Error)]
@@ -41,6 +49,11 @@ pub enum DbError {
     AlreadyReversed(String),
     #[error("corrupt data: {0}")]
     Corrupt(String),
+    /// A user-facing (Dutch) explanation of why the request cannot be carried out.
+    #[error("{0}")]
+    Invalid(String),
+    #[error("file error: {0}")]
+    Io(String),
 }
 
 pub type Result<T> = std::result::Result<T, DbError>;
@@ -90,6 +103,7 @@ pub enum ChainStatus {
 pub struct Ledger {
     conn: Connection,
     actor: String,
+    document_root: Option<std::path::PathBuf>,
 }
 
 impl Ledger {
@@ -100,7 +114,9 @@ impl Ledger {
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
-        Self::init(conn)
+        let mut ledger = Self::init(conn)?;
+        ledger.document_root = path.parent().map(|p| p.join("documents"));
+        Ok(ledger)
     }
 
     pub fn open_in_memory() -> Result<Self> {
@@ -114,7 +130,13 @@ impl Ledger {
         Ok(Ledger {
             conn,
             actor: "owner".into(),
+            document_root: None,
         })
+    }
+
+    /// Directory for the content-addressed document store (defaults to `<db dir>/documents`).
+    pub fn set_document_root(&mut self, dir: &Path) {
+        self.document_root = Some(dir.to_path_buf());
     }
 
     /// Migrations that would be applied when opening the file at `path`.
@@ -163,178 +185,11 @@ impl Ledger {
     }
 
     fn post_inner(&mut self, draft: &EntryDraft, reverses: Option<&str>) -> Result<PostedEntry> {
-        draft.validate().map_err(DbError::Validation)?;
         let actor = self.actor.clone();
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-
-        // Accounts must exist and be active.
-        let mut errors = Vec::new();
-        for acc in draft.accounts() {
-            let active: Option<bool> = tx
-                .query_row("SELECT active FROM account WHERE number = ?1", [acc], |r| {
-                    r.get(0)
-                })
-                .optional()?;
-            match active {
-                None => errors.push(ValidationError::UnknownAccount(acc.to_string())),
-                Some(false) => errors.push(ValidationError::InactiveAccount(acc.to_string())),
-                Some(true) => {}
-            }
-        }
-        let regime = tax::regime_on(&tx, draft.date)?;
-        let codes: std::collections::BTreeSet<&str> = draft
-            .lines
-            .iter()
-            .filter_map(|l| l.tax_code.as_deref())
-            .collect();
-        for code in codes {
-            match tax::code_on(&tx, code, draft.date)? {
-                None => errors.push(ValidationError::UnknownTaxCode(code.to_string())),
-                Some(tc) => {
-                    if let Some(required) = tc.regime {
-                        if required != regime {
-                            errors.push(ValidationError::TaxCodeNotAllowed {
-                                code: code.to_string(),
-                                regime: regime.as_str().to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        if !errors.is_empty() {
-            return Err(DbError::Validation(errors));
-        }
-
-        if let Some(key) = &draft.idempotency_key {
-            let exists: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM journal_entry WHERE idempotency_key = ?1)",
-                [key],
-                |r| r.get(0),
-            )?;
-            if exists {
-                return Err(DbError::Duplicate(key.clone()));
-            }
-        }
-
-        let (year, month) = (draft.date.year(), draft.date.month());
-        let closed: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM period WHERE year=?1 AND month=?2 AND status='closed')",
-            params![year, month],
-            |r| r.get(0),
-        )?;
-        if closed {
-            return Err(DbError::PeriodClosed(year, month));
-        }
-
-        let id = uuid::Uuid::now_v7().to_string();
-        let date_str = draft.date.format("%Y-%m-%d").to_string();
-        tx.execute(
-            "INSERT INTO journal_entry (id, journal, fiscal_year, entry_date, description,
-                 source_kind, source_reference, idempotency_key, status, reverses_entry_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'draft', ?9)",
-            params![
-                id,
-                draft.journal.as_str(),
-                year,
-                date_str,
-                draft.description,
-                draft.source.kind,
-                draft.source.reference,
-                draft.idempotency_key,
-                reverses,
-            ],
-        )?;
-        for (i, line) in draft.lines.iter().enumerate() {
-            tx.execute(
-                "INSERT INTO journal_line (entry_id, line_no, account, amount_cents, currency, tax_code, description)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![
-                    id,
-                    (i + 1) as i64,
-                    line.account,
-                    line.amount.cents,
-                    line.amount.currency.as_str(),
-                    line.tax_code,
-                    line.description,
-                ],
-            )?;
-        }
-
-        let sequence: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(sequence), 0) + 1 FROM journal_entry
-             WHERE journal = ?1 AND fiscal_year = ?2 AND status = 'posted'",
-            params![draft.journal.as_str(), year],
-            |r| r.get(0),
-        )?;
-        let (chain_index, prev_hash): (i64, String) = tx
-            .query_row(
-                "SELECT chain_index + 1, hash FROM journal_entry
-                 WHERE status = 'posted' ORDER BY chain_index DESC LIMIT 1",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?
-            .unwrap_or((1, GENESIS_HASH.to_string()));
-
-        let canonical = CanonicalEntry {
-            entry_id: &id,
-            journal: draft.journal.as_str(),
-            fiscal_year: year,
-            sequence,
-            date: &date_str,
-            description: &draft.description,
-            source_kind: &draft.source.kind,
-            source_reference: draft.source.reference.as_deref(),
-            reverses_entry_id: reverses,
-            lines: draft
-                .lines
-                .iter()
-                .enumerate()
-                .map(|(i, l)| CanonicalLine {
-                    line_no: (i + 1) as i64,
-                    account: &l.account,
-                    amount_cents: l.amount.cents,
-                    currency: l.amount.currency.as_str(),
-                    tax_code: l.tax_code.as_deref(),
-                    description: l.description.as_deref(),
-                })
-                .collect(),
-        };
-        let hash = chain_hash(&prev_hash, &canonical);
-
-        tx.execute(
-            "UPDATE journal_entry SET status='posted', sequence=?2, chain_index=?3, prev_hash=?4,
-                 hash=?5, posted_at=?6 WHERE id=?1",
-            params![
-                id,
-                sequence,
-                chain_index,
-                prev_hash,
-                hash,
-                Utc::now().to_rfc3339()
-            ],
-        )?;
-
-        let posted = PostedEntry {
-            id: id.clone(),
-            journal: draft.journal,
-            fiscal_year: year,
-            sequence,
-            date: draft.date,
-            hash,
-        };
-        tx.execute(
-            "INSERT INTO audit_log (actor, action, entity_type, entity_id, new_value, entry_id)
-             VALUES (?1, 'post', 'journal_entry', ?2, ?3, ?2)",
-            params![
-                actor,
-                id,
-                serde_json::to_string(draft).map_err(|e| DbError::Corrupt(e.to_string()))?
-            ],
-        )?;
+        let posted = post_in_tx(&tx, &actor, draft, reverses)?;
         tx.commit()?;
         Ok(posted)
     }
@@ -605,6 +460,213 @@ impl Ledger {
     fn conn(&self) -> &Connection {
         &self.conn
     }
+}
+
+/// Append an audit-log record inside the caller's transaction.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn audit<O: Serialize + ?Sized, N: Serialize + ?Sized>(
+    tx: &Connection,
+    actor: &str,
+    action: &str,
+    entity_type: &str,
+    entity_id: &str,
+    old: Option<&O>,
+    new: Option<&N>,
+    entry_id: Option<&str>,
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO audit_log (actor, action, entity_type, entity_id, old_value, new_value, entry_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            actor,
+            action,
+            entity_type,
+            entity_id,
+            old.map(|o| serde_json::to_string(o).unwrap_or_default()),
+            new.map(|n| serde_json::to_string(n).unwrap_or_default()),
+            entry_id
+        ],
+    )?;
+    Ok(())
+}
+
+/// Post an entry inside an existing transaction; the caller commits.
+/// This is the single place where journal entries become posted.
+pub(crate) fn post_in_tx(
+    tx: &Connection,
+    actor: &str,
+    draft: &EntryDraft,
+    reverses: Option<&str>,
+) -> Result<PostedEntry> {
+    draft.validate().map_err(DbError::Validation)?;
+
+    // Accounts must exist and be active.
+    let mut errors = Vec::new();
+    for acc in draft.accounts() {
+        let active: Option<bool> = tx
+            .query_row("SELECT active FROM account WHERE number = ?1", [acc], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        match active {
+            None => errors.push(ValidationError::UnknownAccount(acc.to_string())),
+            Some(false) => errors.push(ValidationError::InactiveAccount(acc.to_string())),
+            Some(true) => {}
+        }
+    }
+    let regime = tax::regime_on(tx, draft.date)?;
+    let codes: std::collections::BTreeSet<&str> = draft
+        .lines
+        .iter()
+        .filter_map(|l| l.tax_code.as_deref())
+        .collect();
+    for code in codes {
+        match tax::code_on(tx, code, draft.date)? {
+            None => errors.push(ValidationError::UnknownTaxCode(code.to_string())),
+            Some(tc) => {
+                if let Some(required) = tc.regime {
+                    if required != regime {
+                        errors.push(ValidationError::TaxCodeNotAllowed {
+                            code: code.to_string(),
+                            regime: regime.as_str().to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    if !errors.is_empty() {
+        return Err(DbError::Validation(errors));
+    }
+
+    if let Some(key) = &draft.idempotency_key {
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM journal_entry WHERE idempotency_key = ?1)",
+            [key],
+            |r| r.get(0),
+        )?;
+        if exists {
+            return Err(DbError::Duplicate(key.clone()));
+        }
+    }
+
+    let (year, month) = (draft.date.year(), draft.date.month());
+    let closed: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM period WHERE year=?1 AND month=?2 AND status='closed')",
+        params![year, month],
+        |r| r.get(0),
+    )?;
+    if closed {
+        return Err(DbError::PeriodClosed(year, month));
+    }
+
+    let id = uuid::Uuid::now_v7().to_string();
+    let date_str = draft.date.format("%Y-%m-%d").to_string();
+    tx.execute(
+        "INSERT INTO journal_entry (id, journal, fiscal_year, entry_date, description,
+             source_kind, source_reference, idempotency_key, status, reverses_entry_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'draft', ?9)",
+        params![
+            id,
+            draft.journal.as_str(),
+            year,
+            date_str,
+            draft.description,
+            draft.source.kind,
+            draft.source.reference,
+            draft.idempotency_key,
+            reverses,
+        ],
+    )?;
+    for (i, line) in draft.lines.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO journal_line (entry_id, line_no, account, amount_cents, currency, tax_code, description)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                id,
+                (i + 1) as i64,
+                line.account,
+                line.amount.cents,
+                line.amount.currency.as_str(),
+                line.tax_code,
+                line.description,
+            ],
+        )?;
+    }
+
+    let sequence: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(sequence), 0) + 1 FROM journal_entry
+         WHERE journal = ?1 AND fiscal_year = ?2 AND status = 'posted'",
+        params![draft.journal.as_str(), year],
+        |r| r.get(0),
+    )?;
+    let (chain_index, prev_hash): (i64, String) = tx
+        .query_row(
+            "SELECT chain_index + 1, hash FROM journal_entry
+             WHERE status = 'posted' ORDER BY chain_index DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?
+        .unwrap_or((1, GENESIS_HASH.to_string()));
+
+    let canonical = CanonicalEntry {
+        entry_id: &id,
+        journal: draft.journal.as_str(),
+        fiscal_year: year,
+        sequence,
+        date: &date_str,
+        description: &draft.description,
+        source_kind: &draft.source.kind,
+        source_reference: draft.source.reference.as_deref(),
+        reverses_entry_id: reverses,
+        lines: draft
+            .lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| CanonicalLine {
+                line_no: (i + 1) as i64,
+                account: &l.account,
+                amount_cents: l.amount.cents,
+                currency: l.amount.currency.as_str(),
+                tax_code: l.tax_code.as_deref(),
+                description: l.description.as_deref(),
+            })
+            .collect(),
+    };
+    let hash = chain_hash(&prev_hash, &canonical);
+
+    tx.execute(
+        "UPDATE journal_entry SET status='posted', sequence=?2, chain_index=?3, prev_hash=?4,
+             hash=?5, posted_at=?6 WHERE id=?1",
+        params![
+            id,
+            sequence,
+            chain_index,
+            prev_hash,
+            hash,
+            Utc::now().to_rfc3339()
+        ],
+    )?;
+
+    let posted = PostedEntry {
+        id: id.clone(),
+        journal: draft.journal,
+        fiscal_year: year,
+        sequence,
+        date: draft.date,
+        hash,
+    };
+    tx.execute(
+        "INSERT INTO audit_log (actor, action, entity_type, entity_id, new_value, entry_id)
+         VALUES (?1, 'post', 'journal_entry', ?2, ?3, ?2)",
+        params![
+            actor,
+            id,
+            serde_json::to_string(draft).map_err(|e| DbError::Corrupt(e.to_string()))?
+        ],
+    )?;
+    Ok(posted)
 }
 
 #[cfg(test)]
