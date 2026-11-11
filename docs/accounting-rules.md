@@ -89,7 +89,7 @@ Rapport Apple-periode (fiscale maand Apple), proceeds omgerekend door Apple: €
 | 1310 Te ontvangen van Apple | 850,00 | |
 | 8000 Omzet App Store (btw-code: *Dienst EU verlegd*) | | 850,00 |
 
-Uitbetaling ca. 33 dagen na einde Apple-periode: € 848,20 ontvangen
+Uitbetaling binnen ca. 45 dagen na einde Apple-periode: € 848,20 ontvangen
 
 | Rekening | D | C |
 |---|---|---|
