@@ -7,4 +7,4 @@ pub mod money;
 
 pub use account::{Account, AccountType};
 pub use journal::{EntryDraft, EntryLine, JournalCode, Source, ValidationError};
-pub use money::{Currency, Money, MoneyError};
+pub use money::{parse_rate_micro, Currency, Money, MoneyError};

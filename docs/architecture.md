@@ -62,6 +62,12 @@ All tables carry `created_at`; mutable tables also `updated_at`. Primary keys ar
   original-currency amount + rate (optional), tax code, project, description.
 - `period` – year/month, status (`open`/`closed`), closed_at.
 - `audit_log` – who/what/when, old and new values (JSON), affected entry.
+- `tax_code` – versioned VAT codes (`valid_from`/`valid_until`): rate in basis points, VAT-return rubriek,
+  ICP and reverse-charge flags, and the VAT regime under which the code may be used.
+- `vat_regime` – `regular` or `kor` per start date. Posting refuses codes that do not fit the regime
+  in force on the entry date (e.g. `V21` under the KOR, `VKOR` under the regular regime).
+- `exchange_rate` – units of foreign currency per EUR, scaled by 10^6 (integer), per date and source;
+  lookups fall back to the most recent earlier date.
 - `schema_migrations` – applied migration versions.
 
 Later phases add: contacts, invoices, purchase invoices, documents, bank transactions and matches,
@@ -73,6 +79,7 @@ tax codes and VAT periods, platform reports/payouts, assets, time entries, excha
 2. A posted entry has ≥ 2 lines and no zero-amount lines.
 3. Posted entries and their lines cannot be updated or deleted (SQLite triggers abort).
 4. Entries cannot be posted into a closed period.
+4a. Every VAT code on a line exists and is valid on the entry date, and fits the VAT regime of that date.
 5. `idempotency_key` is unique: the same external event can never be posted twice.
 6. Each posted entry stores `hash = SHA-256(prev_hash ‖ canonical serialisation)`; a verification
    routine walks the chain and reports the first break.
@@ -97,7 +104,7 @@ date is in the future; any change creates a new document and an audit log entry.
 
 ## 6. Security, backup, continuity
 
-- Data directory under `%APPDATA%\Boekhoud` (configurable, e.g. to a BitLocker-protected drive).
+- Data directory under `%APPDATA%\nl.boekhoud.app` (to be made configurable, e.g. to a BitLocker-protected drive).
 - Secrets (App Store Connect key, Google service account) in **Windows Credential Manager** via the `keyring` crate, never in the database or repo.
 - Backups: one-click and scheduled (daily on first start of the day) to a user-chosen folder
   (e.g. OneDrive or USB): consistent SQLite online backup + document store, packed and optionally encrypted.

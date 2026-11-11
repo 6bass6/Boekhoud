@@ -231,6 +231,11 @@ Balansrekeningen worden als beginbalans doorgeboekt naar het nieuwe jaar.
 | `INEU` | Inkoop dienst buiten EU, verlegd | 21% | 4a + 5b |
 | `GEEN` | Buiten de btw / geen btw | — | — |
 
+De codes staan als gegevens in de database (tabel `tax_code`) met geldigheidsperiode. De applicatie
+weigert een boeking als een btw-code niet geldig is op de boekingsdatum, of niet past bij het btw-regime
+van die datum: `V21`, `V9`, `I21`, `I9`, `IEU`, `INEU` alleen onder het reguliere regime, `VKOR` alleen
+onder de KOR. **[TOETSEN: inkoop met verlegde btw onder de KOR heeft eigen codes nodig]**
+
 ## 5. KOR — analyse voor deze onderneming
 
 - Omzetgrens € 20.000 per kalenderjaar, alleen voor **in Nederland belaste** omzet.

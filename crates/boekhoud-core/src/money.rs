@@ -156,6 +156,23 @@ impl Money {
         Ok(Money::new(if neg { -cents } else { cents }, currency))
     }
 
+    /// Convert a foreign-currency amount to EUR using a rate in units of this currency
+    /// per 1 EUR, scaled by 1,000,000 (see [`parse_rate_micro`]). Rounds half away from zero.
+    pub fn to_eur(self, units_per_eur_micro: i64) -> Result<Money, MoneyError> {
+        if self.currency == Currency::EUR {
+            return Ok(self);
+        }
+        if units_per_eur_micro <= 0 {
+            return Err(MoneyError::InvalidAmount(format!(
+                "rate {units_per_eur_micro}"
+            )));
+        }
+        let cents =
+            div_round_half_away(self.cents as i128 * 1_000_000, units_per_eur_micro as i128);
+        let cents = i64::try_from(cents).map_err(|_| MoneyError::Overflow)?;
+        Ok(Money::eur(cents))
+    }
+
     fn same_currency(&self, other: Money) -> Result<(), MoneyError> {
         if self.currency == other.currency {
             Ok(())
@@ -179,6 +196,31 @@ impl fmt::Display for Money {
         let abs = self.cents.unsigned_abs();
         write!(f, "{sign}{}.{:02} {}", abs / 100, abs % 100, self.currency)
     }
+}
+
+/// Parse an exchange rate such as `1.0823` or `162.5` into an integer scaled by 1,000,000.
+/// At most six decimals; no floating point involved.
+pub fn parse_rate_micro(s: &str) -> Result<i64, MoneyError> {
+    let err = || MoneyError::InvalidAmount(s.to_string());
+    let t = s.trim().replace(',', ".");
+    let (i, f) = t.split_once('.').unwrap_or((t.as_str(), ""));
+    if i.is_empty()
+        || f.len() > 6
+        || !i.chars().all(|c| c.is_ascii_digit())
+        || !f.chars().all(|c| c.is_ascii_digit())
+    {
+        return Err(err());
+    }
+    let int: i64 = i.parse().map_err(|_| err())?;
+    let frac: i64 = format!("{f:0<6}").parse().map_err(|_| err())?;
+    let v = int
+        .checked_mul(1_000_000)
+        .and_then(|v| v.checked_add(frac))
+        .ok_or(MoneyError::Overflow)?;
+    if v == 0 {
+        return Err(err());
+    }
+    Ok(v)
 }
 
 /// Integer division rounding half away from zero.
@@ -237,6 +279,26 @@ mod tests {
     fn currency_mismatch_is_error() {
         let r = Money::eur(1).checked_add(Money::new(1, Currency::USD));
         assert!(matches!(r, Err(MoneyError::CurrencyMismatch(_, _))));
+    }
+
+    #[test]
+    fn converts_foreign_currency_exactly() {
+        assert_eq!(parse_rate_micro("1.0823").unwrap(), 1_082_300);
+        assert_eq!(parse_rate_micro("162,5").unwrap(), 162_500_000);
+        assert!(parse_rate_micro("0").is_err());
+        assert!(parse_rate_micro("1.1234567").is_err());
+        // USD 108.23 at 1.0823 USD/EUR = EUR 100.00
+        let usd = Money::new(10_823, Currency::USD);
+        assert_eq!(usd.to_eur(1_082_300).unwrap(), Money::eur(10_000));
+        // USD 1.00 at 1.0823 = 0.92396... -> 0.92
+        assert_eq!(
+            Money::new(100, Currency::USD)
+                .to_eur(1_082_300)
+                .unwrap()
+                .cents,
+            92
+        );
+        assert_eq!(Money::eur(5).to_eur(1).unwrap(), Money::eur(5));
     }
 
     #[test]

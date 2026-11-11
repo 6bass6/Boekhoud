@@ -132,6 +132,10 @@ pub enum ValidationError {
     UnknownAccount(String),
     #[error("inactive account: {0}")]
     InactiveAccount(String),
+    #[error("unknown or expired VAT code on the entry date: {0}")]
+    UnknownTaxCode(String),
+    #[error("VAT code {code} cannot be used under the {regime} VAT regime")]
+    TaxCodeNotAllowed { code: String, regime: String },
 }
 
 impl EntryDraft {

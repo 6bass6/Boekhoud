@@ -29,3 +29,32 @@ tfoot td { font-weight: 600; }
 tr.inactive { color: #9aa3ad; }
 .ok { color: #1c7a3d; }
 .error { color: #b3261e; }
+h3 { font-size: 15px; margin: 24px 0 8px; }
+.muted { color: #6b7480; }
+.small { font-size: 12px; }
+.tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; background: #eef2f6; color: #4a5560; font-size: 11px; }
+nav .year { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 12px; font-size: 12px; color: #6b7480; }
+select, input { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+input.num { text-align: right; width: 110px; }
+input.invalid { border-color: #b3261e; background: #fdf0ef; }
+main button.primary { background: var(--accent); color: #fff; }
+main button:disabled { opacity: 0.5; cursor: not-allowed; }
+.row.gap { justify-content: flex-start; gap: 8px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.form-grid label, .box label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #4a5560; }
+.form-grid .wide { grid-column: span 2; }
+.entry-lines { margin-bottom: 16px; }
+.entry-lines td { padding: 4px 6px; }
+.entry-lines select, .entry-lines input:not(.num) { width: 100%; }
+.entry-lines .actions { white-space: nowrap; }
+.entry-lines .actions button { padding: 2px 8px; margin-left: 2px; }
+table.clickable tbody tr { cursor: pointer; }
+table.clickable tbody tr:hover { background: #f5f8fb; }
+tr.selected { background: #e3edf5 !important; }
+.split { display: grid; grid-template-columns: 1fr 420px; gap: 24px; align-items: start; }
+.panel { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px; position: sticky; top: 0; }
+.panel h3 { margin-top: 0; }
+.panel a { color: var(--accent); cursor: pointer; text-decoration: underline; }
+.box { border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px; margin: 8px 0; background: #fafbfc; }
+th, td { white-space: nowrap; }
+td.desc { white-space: normal; width: 100%; }

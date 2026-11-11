@@ -8,6 +8,7 @@ use crate::Result;
 pub const MIGRATIONS: &[(u32, &str)] = &[
     (1, include_str!("../migrations/0001_core.sql")),
     (2, include_str!("../migrations/0002_seed_chart.sql")),
+    (3, include_str!("../migrations/0003_tax_and_rates.sql")),
 ];
 
 fn ensure_table(conn: &Connection) -> Result<()> {

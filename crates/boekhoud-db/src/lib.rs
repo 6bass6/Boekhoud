@@ -3,7 +3,10 @@
 //!
 //! [`Ledger::post`] is the only way to create posted journal entries.
 
+mod company;
 mod migrations;
+mod queries;
+mod tax;
 
 use std::path::Path;
 
@@ -17,7 +20,10 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 use thiserror::Error;
 
+pub use company::Company;
 pub use migrations::MIGRATIONS;
+pub use queries::{EntryDetail, EntrySummary, LedgerCard, LedgerCardRow, LineView, PeriodView};
+pub use tax::{TaxCode, VatRegime};
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -175,6 +181,27 @@ impl Ledger {
                 None => errors.push(ValidationError::UnknownAccount(acc.to_string())),
                 Some(false) => errors.push(ValidationError::InactiveAccount(acc.to_string())),
                 Some(true) => {}
+            }
+        }
+        let regime = tax::regime_on(&tx, draft.date)?;
+        let codes: std::collections::BTreeSet<&str> = draft
+            .lines
+            .iter()
+            .filter_map(|l| l.tax_code.as_deref())
+            .collect();
+        for code in codes {
+            match tax::code_on(&tx, code, draft.date)? {
+                None => errors.push(ValidationError::UnknownTaxCode(code.to_string())),
+                Some(tc) => {
+                    if let Some(required) = tc.regime {
+                        if required != regime {
+                            errors.push(ValidationError::TaxCodeNotAllowed {
+                                code: code.to_string(),
+                                regime: regime.as_str().to_string(),
+                            });
+                        }
+                    }
+                }
             }
         }
         if !errors.is_empty() {
@@ -358,7 +385,7 @@ impl Ledger {
         self.post_inner(&draft, Some(entry_id))
     }
 
-    fn entry_lines(&self, entry_id: &str) -> Result<Vec<EntryLine>> {
+    pub(crate) fn entry_lines(&self, entry_id: &str) -> Result<Vec<EntryLine>> {
         let mut stmt = self.conn.prepare(
             "SELECT account, amount_cents, currency, tax_code, description
              FROM journal_line WHERE entry_id = ?1 ORDER BY line_no",

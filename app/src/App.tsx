@@ -1,122 +1,55 @@
-import { useEffect, useState } from "react";
-import { api, type Account, type AppInfo, type ChainStatus, type TrialBalanceRow } from "./api";
-import { formatEuro } from "./money";
+import { useState } from "react";
+import { api } from "./api";
+import { useLoad } from "./hooks";
+import { Entries } from "./views/Entries";
+import { NewEntry } from "./views/NewEntry";
+import { ChartOfAccounts, LedgerCardView, TrialBalance } from "./views/Reports";
+import { Periods, Settings } from "./views/Settings";
 
-type View = "proefbalans" | "rekeningschema";
+type View = "boekingen" | "nieuw" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
 
-const typeLabel: Record<Account["account_type"], string> = {
-  asset: "Activa",
-  liability: "Passiva",
-  equity: "Eigen vermogen",
-  revenue: "Opbrengsten",
-  expense: "Kosten",
-};
+const nav: { view: View; label: string }[] = [
+  { view: "boekingen", label: "Boekingen" },
+  { view: "nieuw", label: "Nieuwe boeking" },
+  { view: "proefbalans", label: "Proef- en saldibalans" },
+  { view: "grootboek", label: "Grootboekkaart" },
+  { view: "perioden", label: "Perioden" },
+  { view: "rekeningschema", label: "Rekeningschema" },
+  { view: "instellingen", label: "Instellingen" },
+];
 
 export function App() {
-  const [view, setView] = useState<View>("proefbalans");
-  const [info, setInfo] = useState<AppInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<View>("boekingen");
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [account, setAccount] = useState("");
+  const info = useLoad(() => api.appInfo(), []);
 
-  useEffect(() => {
-    api.appInfo().then(setInfo).catch((e) => setError(String(e)));
-  }, []);
+  const openAccount = (a: string) => { setAccount(a); setView("grootboek"); };
 
   return (
     <div className="layout">
       <nav>
         <h1>Boekhoud</h1>
-        <button className={view === "proefbalans" ? "active" : ""} onClick={() => setView("proefbalans")}>
-          Proef- en saldibalans
-        </button>
-        <button className={view === "rekeningschema" ? "active" : ""} onClick={() => setView("rekeningschema")}>
-          Rekeningschema
-        </button>
-        <footer>{info && <small>v{info.version}<br />{info.data_dir}</small>}</footer>
+        <label className="year">Boekjaar
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {Array.from({ length: 8 }, (_, i) => new Date().getFullYear() + 1 - i).map((y) => <option key={y}>{y}</option>)}
+          </select>
+        </label>
+        {nav.map((n) => (
+          <button key={n.view} className={view === n.view ? "active" : ""} onClick={() => setView(n.view)}>{n.label}</button>
+        ))}
+        <footer>{info.data && <small>v{info.data.version}<br />{info.data.data_dir}</small>}</footer>
       </nav>
       <main>
-        {error && <p className="error">Fout: {error}</p>}
-        {view === "proefbalans" ? <TrialBalance /> : <ChartOfAccounts />}
+        {info.error && <p className="error">{info.error}</p>}
+        {view === "boekingen" && <Entries year={year} />}
+        {view === "nieuw" && <NewEntry onPosted={() => undefined} />}
+        {view === "proefbalans" && <TrialBalance year={year} onOpenAccount={openAccount} />}
+        {view === "grootboek" && <LedgerCardView year={year} account={account} onAccount={setAccount} />}
+        {view === "perioden" && <Periods year={year} />}
+        {view === "rekeningschema" && <ChartOfAccounts />}
+        {view === "instellingen" && <Settings />}
       </main>
     </div>
-  );
-}
-
-function TrialBalance() {
-  const [rows, setRows] = useState<TrialBalanceRow[] | null>(null);
-  const [chain, setChain] = useState<ChainStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.trialBalance().then(setRows).catch((e) => setError(String(e)));
-  }, []);
-
-  const check = () => api.verifyChain().then(setChain).catch((e) => setError(String(e)));
-  const totalDebit = rows?.reduce((s, r) => s + r.debit_cents, 0) ?? 0;
-  const totalCredit = rows?.reduce((s, r) => s + r.credit_cents, 0) ?? 0;
-
-  return (
-    <section>
-      <header className="row">
-        <h2>Proef- en saldibalans</h2>
-        <button onClick={check}>Integriteit controleren</button>
-      </header>
-      {chain && (
-        <p className={"Intact" in chain ? "ok" : "error"}>
-          {"Intact" in chain
-            ? `Administratie intact: ${chain.Intact} boekingen gecontroleerd.`
-            : `Let op: boeking ${chain.Broken.chain_index} is gewijzigd buiten de applicatie.`}
-        </p>
-      )}
-      {error && <p className="error">Fout: {error}</p>}
-      {rows && rows.length === 0 && <p>Nog geen boekingen.</p>}
-      {rows && rows.length > 0 && (
-        <table>
-          <thead>
-            <tr><th>Rekening</th><th>Naam</th><th className="num">Debet</th><th className="num">Credit</th><th className="num">Saldo</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.account}>
-                <td>{r.account}</td><td>{r.name}</td>
-                <td className="num">{formatEuro(r.debit_cents)}</td>
-                <td className="num">{formatEuro(r.credit_cents)}</td>
-                <td className="num">{formatEuro(r.balance_cents)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr><td colSpan={2}>Totaal</td><td className="num">{formatEuro(totalDebit)}</td><td className="num">{formatEuro(totalCredit)}</td><td /></tr>
-          </tfoot>
-        </table>
-      )}
-    </section>
-  );
-}
-
-function ChartOfAccounts() {
-  const [accounts, setAccounts] = useState<Account[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.accounts().then(setAccounts).catch((e) => setError(String(e)));
-  }, []);
-
-  return (
-    <section>
-      <h2>Rekeningschema</h2>
-      {error && <p className="error">Fout: {error}</p>}
-      {accounts && (
-        <table>
-          <thead><tr><th>Nr</th><th>Naam</th><th>Soort</th><th>RGS</th></tr></thead>
-          <tbody>
-            {accounts.map((a) => (
-              <tr key={a.number} className={a.active ? "" : "inactive"}>
-                <td>{a.number}</td><td>{a.name}</td><td>{typeLabel[a.account_type]}</td><td>{a.rgs_code ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </section>
   );
 }
