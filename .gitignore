@@ -1,0 +1,15 @@
+/target
+node_modules/
+dist/
+app/src-tauri/target/
+app/src-tauri/gen/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+.env
+*.p8
+*.pem
+*.key
+service-account*.json
+.DS_Store

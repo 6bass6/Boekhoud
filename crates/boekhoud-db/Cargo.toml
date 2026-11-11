@@ -1,0 +1,19 @@
+[package]
+name = "boekhoud-db"
+description = "SQLite storage, migrations and the ledger posting function"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+boekhoud-core.workspace = true
+chrono.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
