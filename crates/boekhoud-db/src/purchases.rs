@@ -332,6 +332,7 @@ impl Ledger {
             method,
             "1100",
             None,
+            None,
             desc.trim(),
         )?;
         tx.commit()?;

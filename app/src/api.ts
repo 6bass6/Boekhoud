@@ -257,6 +257,39 @@ export interface PlatformReport {
   overlapping: string[];
 }
 
+export interface BankAccount { id: string; iban: string; name: string; ledger_account: string }
+export interface BankTransaction {
+  id: string;
+  bank_account_id: string;
+  booking_date: string;
+  amount_cents: number;
+  currency: string;
+  counterparty_name: string | null;
+  counterparty_iban: string | null;
+  description: string;
+  state: "open" | "processed" | "ignored";
+  entry_id: string | null;
+  entry_number: string | null;
+  ignore_reason: string | null;
+}
+export type BankAction =
+  | { kind: "sales_invoice"; invoice_id: string }
+  | { kind: "purchase_invoice"; invoice_id: string }
+  | { kind: "platform_payout"; platform: string; settle_cents: number | null }
+  | { kind: "account"; account: string; tax_code: string | null; description: string | null }
+  | { kind: "private" }
+  | { kind: "ignore"; reason: string };
+export interface Suggestion { action: BankAction; label: string; confidence: number }
+export interface Reconciliation {
+  statement_date: string | null;
+  statement_balance_cents: number | null;
+  ledger_balance_at_statement_cents: number | null;
+  difference_cents: number | null;
+  open_transactions: number;
+  open_sum_cents: number;
+  ledger_balance_cents: number;
+}
+
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   accounts: () => invoke<Account[]>("accounts"),
@@ -306,6 +339,15 @@ export const api = {
   platformReports: () => invoke<PlatformReport[]>("platform_reports"),
   bookPlatformReport: (id: string, amounts: { currency: string; eur: string }[]) => invoke<string>("book_platform_report", { id, amounts }),
   deletePlatformReport: (id: string) => invoke<void>("delete_platform_report", { id }),
+  importBankFile: (filename: string, dataBase64: string, bankAccountId: string | null) =>
+    invoke<{ account: BankAccount; format: string; result: { new_transactions: number; skipped_duplicates: number } }>("import_bank_file", { filename, dataBase64, bankAccountId }),
+  bankAccounts: () => invoke<BankAccount[]>("bank_accounts"),
+  addBankAccount: (iban: string, name: string) => invoke<BankAccount>("add_bank_account", { iban, name }),
+  bankTransactions: (accountId: string, filter: string, year: number | null) => invoke<BankTransaction[]>("bank_transactions", { accountId, filter, year }),
+  bankSuggestions: (id: string) => invoke<Suggestion[]>("bank_suggestions", { id }),
+  processBankTransaction: (id: string, action: BankAction) => invoke<BankTransaction>("process_bank_transaction", { id, action }),
+  reopenBankTransaction: (id: string) => invoke<void>("reopen_bank_transaction", { id }),
+  bankReconciliation: (accountId: string) => invoke<Reconciliation>("bank_reconciliation", { accountId }),
   platformRevenueByProduct: (year: number) => invoke<[string, string, string, number, number][]>("platform_revenue_by_product", { year }),
 };
 

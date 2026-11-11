@@ -289,6 +289,7 @@ pub(crate) fn record_payment(
     method: &str,
     counter_account: &str,
     bank_transaction_id: Option<&str>,
+    idempotency_key: Option<String>,
     description: &str,
 ) -> Result<String> {
     if amount_cents == 0 {
@@ -315,7 +316,7 @@ pub(crate) fn record_payment(
             kind: "payment".into(),
             reference: Some(id.clone()),
         },
-        idempotency_key: bank_transaction_id.map(|b| format!("bank_transaction:{b}")),
+        idempotency_key,
     };
     let posted = post_in_tx(tx, actor, &draft, None)?;
     tx.execute(
@@ -613,6 +614,7 @@ impl Ledger {
             amount_cents,
             method,
             "1100",
+            None,
             None,
             &desc,
         )?;

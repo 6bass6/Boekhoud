@@ -2,6 +2,7 @@
 //! Keep this thin — business rules belong in `boekhoud-core` / `boekhoud-db`.
 //! Amounts arrive from the UI as text and are parsed here with `Money::parse`, never as floats.
 
+mod bank;
 mod format;
 mod invoicing;
 mod messages;
@@ -323,7 +324,15 @@ pub fn run() {
             platforms::platform_reports,
             platforms::book_platform_report,
             platforms::delete_platform_report,
-            platforms::platform_revenue_by_product
+            platforms::platform_revenue_by_product,
+            bank::import_bank_file,
+            bank::bank_accounts,
+            bank::add_bank_account,
+            bank::bank_transactions,
+            bank::bank_suggestions,
+            bank::process_bank_transaction,
+            bank::reopen_bank_transaction,
+            bank::bank_reconciliation
         ])
         .run(tauri::generate_context!())
         .expect("error while running Boekhoud");

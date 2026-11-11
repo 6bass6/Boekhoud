@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "./api";
 import { useLoad } from "./hooks";
+import { Bank } from "./views/Bank";
 import { Contacts } from "./views/Contacts";
 import { Entries } from "./views/Entries";
 import { Platforms } from "./views/Platforms";
@@ -10,12 +11,13 @@ import { NewEntry } from "./views/NewEntry";
 import { ChartOfAccounts, LedgerCardView, TrialBalance } from "./views/Reports";
 import { Periods, Settings } from "./views/Settings";
 
-type View = "verkoop" | "inkoop" | "platformen" | "contacten" | "boekingen" | "nieuw" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
+type View = "verkoop" | "inkoop" | "platformen" | "bank" | "contacten" | "boekingen" | "nieuw" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
 
 const nav: { view: View; label: string; section?: string }[] = [
   { view: "verkoop", label: "Verkoopfacturen", section: "Administratie" },
   { view: "inkoop", label: "Inkoopfacturen" },
   { view: "platformen", label: "Platformen" },
+  { view: "bank", label: "Bank" },
   { view: "contacten", label: "Contacten" },
   { view: "boekingen", label: "Boekingen", section: "Boekhouding" },
   { view: "nieuw", label: "Nieuwe boeking" },
@@ -56,6 +58,7 @@ export function App() {
         {view === "verkoop" && <SalesInvoices year={year} />}
         {view === "inkoop" && <Purchases year={year} />}
         {view === "platformen" && <Platforms year={year} />}
+        {view === "bank" && <Bank year={year} />}
         {view === "contacten" && <Contacts />}
         {view === "boekingen" && <Entries year={year} />}
         {view === "nieuw" && <NewEntry onPosted={() => undefined} />}

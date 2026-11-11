@@ -3,6 +3,7 @@
 //!
 //! [`Ledger::post`] is the only way to create posted journal entries.
 
+mod bank;
 mod company;
 mod contacts;
 mod documents;
@@ -23,6 +24,10 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 use thiserror::Error;
 
+pub use bank::{
+    split_gross, BankAccount, BankAction, BankImportInput, BankImportResult, BankTransactionView, NewBankTransaction,
+    Reconciliation, Suggestion,
+};
 pub use company::Company;
 pub use contacts::Contact;
 pub use documents::{mime_from_filename, DocumentInfo};
