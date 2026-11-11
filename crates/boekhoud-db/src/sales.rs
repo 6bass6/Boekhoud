@@ -106,10 +106,7 @@ fn validate_lines(lines: &[SalesLine]) -> Result<()> {
     }
     for (i, l) in lines.iter().enumerate() {
         if l.description.trim().is_empty() {
-            return Err(DbError::Invalid(format!(
-                "regel {} heeft geen omschrijving",
-                i + 1
-            )));
+            return Err(DbError::Invalid(format!("regel {} heeft geen omschrijving", i + 1)));
         }
         if l.quantity_milli == 0 {
             return Err(DbError::Invalid(format!("regel {} heeft aantal 0", i + 1)));
@@ -149,11 +146,7 @@ fn load_lines(conn: &Connection, id: &str) -> Result<Vec<SalesLine>> {
 
 fn payment_term(conn: &Connection) -> Result<i64> {
     Ok(conn
-        .query_row(
-            "SELECT payment_term_days FROM company WHERE id = 1",
-            [],
-            |r| r.get(0),
-        )
+        .query_row("SELECT payment_term_days FROM company WHERE id = 1", [], |r| r.get(0))
         .optional()?
         .unwrap_or(30))
 }
@@ -218,9 +211,7 @@ fn summary(conn: &Connection, id: &str) -> Result<SalesInvoiceSummary> {
         None => {
             let lines = load_lines(conn, &id)?;
             let rules = vat_rules_on(conn, date(&inv_date)?)?;
-            sales_totals(&lines, &rules)
-                .map(|t| t.total_cents)
-                .unwrap_or(0)
+            sales_totals(&lines, &rules).map(|t| t.total_cents).unwrap_or(0)
         }
     };
     let open = sales_open_cents(conn, &id)?;
@@ -269,14 +260,7 @@ pub(crate) fn payments_for(conn: &Connection, column: &str, id: &str) -> Result<
     ))?;
     let rows = stmt.query_map([id], |r| {
         let d: String = r.get(1)?;
-        Ok((
-            r.get::<_, String>(0)?,
-            d,
-            r.get(2)?,
-            r.get(3)?,
-            r.get(4)?,
-            r.get(5)?,
-        ))
+        Ok((r.get::<_, String>(0)?, d, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
     })?;
     let mut out = Vec::new();
     for row in rows {
@@ -355,7 +339,15 @@ impl Ledger {
         tx.execute(
             "INSERT INTO sales_invoice (id, contact_id, status, invoice_date, supply_date, due_date, reference, notes)
              VALUES (?1, ?2, 'draft', ?3, ?4, ?5, ?6, ?7)",
-            params![id, input.contact_id, iso(input.invoice_date), input.supply_date.map(iso), iso(due), input.reference, input.notes],
+            params![
+                id,
+                input.contact_id,
+                iso(input.invoice_date),
+                input.supply_date.map(iso),
+                iso(due),
+                input.reference,
+                input.notes
+            ],
         )?;
         write_lines(&tx, &id, &input.lines)?;
         tx.commit()?;
@@ -366,11 +358,7 @@ impl Ledger {
         validate_lines(&input.lines)?;
         let tx = self.conn.transaction()?;
         let status: String = tx
-            .query_row(
-                "SELECT status FROM sales_invoice WHERE id = ?1",
-                [id],
-                |r| r.get(0),
-            )
+            .query_row("SELECT status FROM sales_invoice WHERE id = ?1", [id], |r| r.get(0))
             .optional()?
             .ok_or_else(|| DbError::NotFound(format!("factuur {id}")))?;
         if status != "draft" {
@@ -393,14 +381,11 @@ impl Ledger {
     }
 
     pub fn delete_draft_sales_invoice(&mut self, id: &str) -> Result<()> {
-        let n = self.conn.execute(
-            "DELETE FROM sales_invoice WHERE id = ?1 AND status = 'draft'",
-            [id],
-        )?;
+        let n = self
+            .conn
+            .execute("DELETE FROM sales_invoice WHERE id = ?1 AND status = 'draft'", [id])?;
         if n == 0 {
-            return Err(DbError::Invalid(
-                "alleen concepten kunnen worden verwijderd".into(),
-            ));
+            return Err(DbError::Invalid("alleen concepten kunnen worden verwijderd".into()));
         }
         Ok(())
     }
@@ -414,9 +399,7 @@ impl Ledger {
     /// the seller/buyer details. All or nothing.
     pub fn issue_sales_invoice(&mut self, id: &str) -> Result<SalesInvoiceSummary> {
         let actor = self.actor.clone();
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let req = requirements(&tx, id)?;
         if !req.missing.is_empty() {
             return Err(DbError::Invalid(format!(
@@ -433,8 +416,8 @@ impl Ledger {
         let lines = load_lines(&tx, id)?;
         let rules = vat_rules_on(&tx, inv_date)?;
         let totals = sales_totals(&lines, &rules).map_err(|e| DbError::Invalid(e.to_string()))?;
-        let entry_lines = sales_entry_lines(&lines, &rules, RECEIVABLE_ACCOUNT)
-            .map_err(|e| DbError::Invalid(e.to_string()))?;
+        let entry_lines =
+            sales_entry_lines(&lines, &rules, RECEIVABLE_ACCOUNT).map_err(|e| DbError::Invalid(e.to_string()))?;
         let year = inv_date.year();
         let seq: i64 = tx.query_row(
             "SELECT COALESCE(MAX(invoice_sequence), 0) + 1 FROM sales_invoice WHERE invoice_year = ?1 AND status = 'issued'",
@@ -445,11 +428,7 @@ impl Ledger {
         let contact = contact_by_id(&tx, &contact_id)?;
         let company = crate::company::company_row(&tx)?
             .ok_or_else(|| DbError::Invalid("ondernemingsgegevens ontbreken".into()))?;
-        let kind = if credits.is_some() {
-            "Creditnota"
-        } else {
-            "Factuur"
-        };
+        let kind = if credits.is_some() { "Creditnota" } else { "Factuur" };
         let draft = EntryDraft {
             journal: JournalCode::VRK,
             date: inv_date,
@@ -467,8 +446,17 @@ impl Ledger {
                  seller_snapshot=?5, buyer_snapshot=?6, subtotal_cents=?7, vat_cents=?8, total_cents=?9,
                  entry_id=?10, issued_at=?11 WHERE id=?1",
             params![
-                id, year, seq, number, json(&company), json(&contact),
-                totals.subtotal_cents, totals.vat_cents, totals.total_cents, posted.id, Utc::now().to_rfc3339()
+                id,
+                year,
+                seq,
+                number,
+                json(&company),
+                json(&contact),
+                totals.subtotal_cents,
+                totals.vat_cents,
+                totals.total_cents,
+                posted.id,
+                Utc::now().to_rfc3339()
             ],
         )?;
         audit(
@@ -544,11 +532,11 @@ impl Ledger {
         let rules = vat_rules_on(&self.conn, s.invoice_date)?;
         let totals = sales_totals(&lines, &rules).ok();
         let credits_number = match &credits {
-            Some(c) => self.conn.query_row(
-                "SELECT invoice_number FROM sales_invoice WHERE id = ?1",
-                [c],
-                |r| r.get(0),
-            )?,
+            Some(c) => self
+                .conn
+                .query_row("SELECT invoice_number FROM sales_invoice WHERE id = ?1", [c], |r| {
+                    r.get(0)
+                })?,
             None => None,
         };
         let parse = |s: Option<String>| -> Result<Option<serde_json::Value>> {
@@ -604,9 +592,7 @@ impl Ledger {
         method: &str,
     ) -> Result<String> {
         let actor = self.actor.clone();
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let s = summary(&tx, invoice_id)?;
         if s.status != "issued" || s.is_credit_note {
             return Err(DbError::Invalid(
@@ -677,13 +663,8 @@ fn requirements(conn: &Connection, id: &str) -> Result<IssueRequirements> {
     match sales_totals(&lines, &rules) {
         Err(e) => missing.push(format!("regels: {e}")),
         Ok(t) => {
-            if t.groups.iter().any(|g| g.reverse_charge)
-                && contact.vat_number.as_deref().unwrap_or("").is_empty()
-            {
-                missing.push(format!(
-                    "btw-id van {} (verplicht bij btw verlegd)",
-                    contact.name
-                ));
+            if t.groups.iter().any(|g| g.reverse_charge) && contact.vat_number.as_deref().unwrap_or("").is_empty() {
+                missing.push(format!("btw-id van {} (verplicht bij btw verlegd)", contact.name));
             }
         }
     }

@@ -57,9 +57,8 @@ const TAX_CODE_COLS: &str =
 
 pub(crate) fn date_col(row: &Row, i: usize) -> rusqlite::Result<NaiveDate> {
     let s: String = row.get(i)?;
-    NaiveDate::parse_from_str(&s, "%Y-%m-%d").map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(i, rusqlite::types::Type::Text, e.into())
-    })
+    NaiveDate::parse_from_str(&s, "%Y-%m-%d")
+        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(i, rusqlite::types::Type::Text, e.into()))
 }
 
 fn tax_code_from_row(row: &Row) -> rusqlite::Result<TaxCode> {
@@ -71,9 +70,7 @@ fn tax_code_from_row(row: &Row) -> rusqlite::Result<TaxCode> {
         valid_until: until
             .map(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d"))
             .transpose()
-            .map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, e.into())
-            })?,
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, e.into()))?,
         name: row.get(3)?,
         kind: row.get(4)?,
         rate_bp: row.get(5)?,
@@ -83,9 +80,7 @@ fn tax_code_from_row(row: &Row) -> rusqlite::Result<TaxCode> {
         regime: regime
             .map(|r| r.parse::<VatRegime>())
             .transpose()
-            .map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, e.into())
-            })?,
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, e.into()))?,
         note: row.get(10)?,
     })
 }
@@ -110,10 +105,7 @@ pub(crate) fn code_on(conn: &Connection, code: &str, date: NaiveDate) -> Result<
 }
 
 /// Posting rules for all VAT codes valid on `date`.
-pub(crate) fn vat_rules_on(
-    conn: &Connection,
-    date: NaiveDate,
-) -> Result<Vec<boekhoud_core::invoice::VatRule>> {
+pub(crate) fn vat_rules_on(conn: &Connection, date: NaiveDate) -> Result<Vec<boekhoud_core::invoice::VatRule>> {
     let mut stmt = conn.prepare(
         "SELECT code, rate_bp, payable_account, deductible_account, reverse_charge FROM tax_code
          WHERE valid_from <= ?1 AND (valid_until IS NULL OR valid_until >= ?1)",
@@ -169,12 +161,7 @@ impl Ledger {
     }
 
     /// Record a VAT regime starting on `valid_from` (e.g. joining or leaving the KOR).
-    pub fn set_vat_regime(
-        &mut self,
-        valid_from: NaiveDate,
-        regime: VatRegime,
-        note: &str,
-    ) -> Result<()> {
+    pub fn set_vat_regime(&mut self, valid_from: NaiveDate, regime: VatRegime, note: &str) -> Result<()> {
         let tx = self.conn.transaction()?;
         let old = regime_on(&tx, valid_from)?;
         tx.execute(
@@ -214,11 +201,7 @@ impl Ledger {
     }
 
     /// Most recent rate on or before `date` (ECB publishes no rates in weekends and holidays).
-    pub fn exchange_rate_on(
-        &self,
-        date: NaiveDate,
-        currency: &str,
-    ) -> Result<Option<(NaiveDate, i64)>> {
+    pub fn exchange_rate_on(&self, date: NaiveDate, currency: &str) -> Result<Option<(NaiveDate, i64)>> {
         Ok(self
             .conn
             .query_row(

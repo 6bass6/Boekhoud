@@ -186,11 +186,7 @@ impl EntryDraft {
 
     /// Total of the debit side, in cents.
     pub fn total_debit(&self) -> i64 {
-        self.lines
-            .iter()
-            .map(|l| l.amount.cents)
-            .filter(|c| *c > 0)
-            .sum()
+        self.lines.iter().map(|l| l.amount.cents).filter(|c| *c > 0).sum()
     }
 }
 
@@ -288,13 +284,7 @@ mod tests {
     #[test]
     fn reversal_negates_and_balances() {
         let e = hosting_invoice();
-        let r = reversal_of(
-            &e.lines,
-            e.journal,
-            date(),
-            "Correctie".into(),
-            "INK-2026-0001",
-        );
+        let r = reversal_of(&e.lines, e.journal, date(), "Correctie".into(), "INK-2026-0001");
         assert_eq!(r.validate(), Ok(()));
         for (a, b) in e.lines.iter().zip(&r.lines) {
             assert_eq!(a.amount.cents, -b.amount.cents);

@@ -29,10 +29,7 @@ impl AccountType {
     /// Balance-sheet accounts carry their balance into the next fiscal year;
     /// profit-and-loss accounts are closed to equity at year end.
     pub fn is_balance_sheet(&self) -> bool {
-        matches!(
-            self,
-            AccountType::Asset | AccountType::Liability | AccountType::Equity
-        )
+        matches!(self, AccountType::Asset | AccountType::Liability | AccountType::Equity)
     }
 }
 

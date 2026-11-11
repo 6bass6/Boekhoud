@@ -4,9 +4,8 @@ use base64::Engine;
 use boekhoud_core::invoice::{PurchaseLine, SalesLine};
 use boekhoud_core::{Currency, Money};
 use boekhoud_db::{
-    Company, Contact, DocumentInfo, IssueRequirements, Ledger, PurchaseInput,
-    PurchaseInvoiceDetail, PurchaseInvoiceSummary, SalesInvoiceDetail, SalesInvoiceInput,
-    SalesInvoiceSummary, VatRegime,
+    Company, Contact, DocumentInfo, IssueRequirements, Ledger, PurchaseInput, PurchaseInvoiceDetail,
+    PurchaseInvoiceSummary, SalesInvoiceDetail, SalesInvoiceInput, SalesInvoiceSummary, VatRegime,
 };
 use boekhoud_pdf::{InvoicePdf, Party, PdfLine};
 use chrono::NaiveDate;
@@ -101,18 +100,14 @@ fn sales_input(f: SalesInvoiceForm) -> CmdResult<SalesInvoiceInput> {
             continue;
         }
         let n = i + 1;
-        let quantity_milli = format::parse_quantity(&l.quantity)
-            .ok_or_else(|| format!("Regel {n}: ongeldig aantal."))?;
+        let quantity_milli =
+            format::parse_quantity(&l.quantity).ok_or_else(|| format!("Regel {n}: ongeldig aantal."))?;
         lines.push(SalesLine {
             description: l.description.trim().to_string(),
             quantity_milli,
             unit_price_cents: amount(&l.unit_price, &format!("regel {n}"))?,
             tax_code: l.tax_code,
-            account: if l.account.is_empty() {
-                "8100".into()
-            } else {
-                l.account
-            },
+            account: if l.account.is_empty() { "8100".into() } else { l.account },
         });
     }
     Ok(SalesInvoiceInput {
@@ -127,10 +122,7 @@ fn sales_input(f: SalesInvoiceForm) -> CmdResult<SalesInvoiceInput> {
 }
 
 #[tauri::command]
-pub fn sales_invoices(
-    state: State<AppState>,
-    year: Option<i32>,
-) -> CmdResult<Vec<SalesInvoiceSummary>> {
+pub fn sales_invoices(state: State<AppState>, year: Option<i32>) -> CmdResult<Vec<SalesInvoiceSummary>> {
     with_ledger(&state, |l| l.sales_invoices(year))
 }
 
@@ -140,11 +132,7 @@ pub fn sales_invoice(state: State<AppState>, id: String) -> CmdResult<SalesInvoi
 }
 
 #[tauri::command]
-pub fn save_sales_invoice(
-    state: State<AppState>,
-    id: Option<String>,
-    invoice: SalesInvoiceForm,
-) -> CmdResult<String> {
+pub fn save_sales_invoice(state: State<AppState>, id: Option<String>, invoice: SalesInvoiceForm) -> CmdResult<String> {
     let input = sales_input(invoice)?;
     with_ledger(&state, |l| match id.filter(|i| !i.is_empty()) {
         Some(id) => l.update_sales_invoice(&id, &input).map(|_| id),
@@ -158,10 +146,7 @@ pub fn delete_sales_invoice(state: State<AppState>, id: String) -> CmdResult<()>
 }
 
 #[tauri::command]
-pub fn sales_issue_requirements(
-    state: State<AppState>,
-    id: String,
-) -> CmdResult<IssueRequirements> {
+pub fn sales_issue_requirements(state: State<AppState>, id: String) -> CmdResult<IssueRequirements> {
     with_ledger(&state, |l| l.sales_issue_requirements(&id))
 }
 
@@ -202,9 +187,7 @@ pub fn register_sales_payment(
 ) -> CmdResult<String> {
     let date = parse_date(&date)?;
     let cents = amount(&amount_text, "betaling")?;
-    with_ledger(&state, |l| {
-        l.register_sales_payment(&id, date, cents, "handmatig")
-    })
+    with_ledger(&state, |l| l.register_sales_payment(&id, date, cents, "handmatig"))
 }
 
 /// Open the invoice PDF: the archived document for issued invoices, a preview for drafts.
@@ -257,21 +240,11 @@ fn invoice_pdf(l: &Ledger, d: &SalesInvoiceDetail) -> boekhoud_db::Result<Invoic
         None => l.contact(&d.summary.contact_id)?,
     };
     let codes = l.tax_codes(d.summary.invoice_date)?;
-    let rate_of = |code: &str| {
-        codes
-            .iter()
-            .find(|c| c.code == code)
-            .and_then(|c| c.rate_bp)
-    };
+    let rate_of = |code: &str| codes.iter().find(|c| c.code == code).and_then(|c| c.rate_bp);
     let draft = d.summary.status == "draft";
     let credit = d.summary.is_credit_note;
 
-    let mut seller_lines = address_lines(
-        &company.address,
-        &company.postal_code,
-        &company.city,
-        &company.country,
-    );
+    let mut seller_lines = address_lines(&company.address, &company.postal_code, &company.city, &company.country);
     if let Some(e) = &company.email {
         seller_lines.push(e.clone());
     }
@@ -291,21 +264,10 @@ fn invoice_pdf(l: &Ledger, d: &SalesInvoiceDetail) -> boekhoud_db::Result<Invoic
 
     let mut meta = vec![
         (
-            if credit {
-                "Creditnotanummer"
-            } else {
-                "Factuurnummer"
-            }
-            .to_string(),
-            d.summary
-                .invoice_number
-                .clone()
-                .unwrap_or_else(|| "CONCEPT".into()),
+            if credit { "Creditnotanummer" } else { "Factuurnummer" }.to_string(),
+            d.summary.invoice_number.clone().unwrap_or_else(|| "CONCEPT".into()),
         ),
-        (
-            "Factuurdatum".to_string(),
-            format::date(d.summary.invoice_date),
-        ),
+        ("Factuurdatum".to_string(), format::date(d.summary.invoice_date)),
     ];
     if let Some(s) = d.supply_date {
         meta.push(("Leverdatum".into(), format::date(s)));
@@ -362,9 +324,7 @@ fn invoice_pdf(l: &Ledger, d: &SalesInvoiceDetail) -> boekhoud_db::Result<Invoic
                 ));
             }
             if g.code == "VKOR" {
-                notices.push(
-                    "Vrijgesteld van btw op grond van de kleineondernemersregeling (KOR).".into(),
-                );
+                notices.push("Vrijgesteld van btw op grond van de kleineondernemersregeling (KOR).".into());
             }
         }
         totals.push(("Totaal".to_string(), format::euro(t.total_cents)));
@@ -407,10 +367,7 @@ fn invoice_pdf(l: &Ledger, d: &SalesInvoiceDetail) -> boekhoud_db::Result<Invoic
     Ok(InvoicePdf {
         title: title.into(),
         seller: Party {
-            name: company
-                .trade_name
-                .clone()
-                .unwrap_or_else(|| company.legal_name.clone()),
+            name: company.trade_name.clone().unwrap_or_else(|| company.legal_name.clone()),
             lines: seller_lines,
         },
         buyer: Party {
@@ -458,10 +415,7 @@ pub struct PurchaseForm {
 }
 
 #[tauri::command]
-pub fn register_purchase_invoice(
-    state: State<AppState>,
-    invoice: PurchaseForm,
-) -> CmdResult<PurchaseInvoiceSummary> {
+pub fn register_purchase_invoice(state: State<AppState>, invoice: PurchaseForm) -> CmdResult<PurchaseInvoiceSummary> {
     if invoice.contact_id.is_empty() {
         return Err("Kies een leverancier.".into());
     }
@@ -496,10 +450,7 @@ pub fn register_purchase_invoice(
 }
 
 #[tauri::command]
-pub fn purchase_invoices(
-    state: State<AppState>,
-    year: Option<i32>,
-) -> CmdResult<Vec<PurchaseInvoiceSummary>> {
+pub fn purchase_invoices(state: State<AppState>, year: Option<i32>) -> CmdResult<Vec<PurchaseInvoiceSummary>> {
     with_ledger(&state, |l| l.purchase_invoices(year))
 }
 
@@ -509,11 +460,7 @@ pub fn purchase_invoice(state: State<AppState>, id: String) -> CmdResult<Purchas
 }
 
 #[tauri::command]
-pub fn attach_purchase_document(
-    state: State<AppState>,
-    id: String,
-    document_id: String,
-) -> CmdResult<()> {
+pub fn attach_purchase_document(state: State<AppState>, id: String, document_id: String) -> CmdResult<()> {
     with_ledger(&state, |l| l.attach_purchase_document(&id, &document_id))
 }
 
@@ -526,9 +473,7 @@ pub fn register_purchase_payment(
 ) -> CmdResult<String> {
     let date = parse_date(&date)?;
     let cents = amount(&amount_text, "betaling")?;
-    with_ledger(&state, |l| {
-        l.register_purchase_payment(&id, date, cents, "handmatig")
-    })
+    with_ledger(&state, |l| l.register_purchase_payment(&id, date, cents, "handmatig"))
 }
 
 // ---------------------------------------------------------------------------
@@ -548,9 +493,7 @@ pub fn upload_document(
     if bytes.len() > 50 * 1024 * 1024 {
         return Err("Bestand is groter dan 50 MB.".into());
     }
-    with_ledger(&state, |l| {
-        l.add_document(&bytes, &filename, &document_type)
-    })
+    with_ledger(&state, |l| l.add_document(&bytes, &filename, &document_type))
 }
 
 #[derive(Serialize)]
@@ -601,9 +544,7 @@ fn open_with_default_app(path: &std::path::Path) -> CmdResult<()> {
     let result = std::process::Command::new("open").arg(path).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
     let result = std::process::Command::new("xdg-open").arg(path).spawn();
-    result
-        .map(|_| ())
-        .map_err(|e| format!("Openen mislukt: {e}"))
+    result.map(|_| ()).map_err(|e| format!("Openen mislukt: {e}"))
 }
 
 #[cfg(test)]
@@ -673,20 +614,11 @@ mod tests {
         let detail = l.sales_invoice(&id).unwrap();
         let pdf = invoice_pdf(&l, &detail).unwrap();
         assert_eq!(pdf.title, "FACTUUR");
-        assert!(pdf
-            .meta
-            .iter()
-            .any(|(k, v)| k == "Factuurnummer" && v == "2026-0001"));
+        assert!(pdf.meta.iter().any(|(k, v)| k == "Factuurnummer" && v == "2026-0001"));
         assert!(pdf.meta.iter().any(|(k, _)| k == "Leverdatum"));
-        assert!(
-            pdf.footer.contains("KvK 12345678") && pdf.footer.contains("Btw-id NL000099998B57")
-        );
+        assert!(pdf.footer.contains("KvK 12345678") && pdf.footer.contains("Btw-id NL000099998B57"));
         assert_eq!(pdf.totals.last().unwrap().1, "€ 1.183,04");
         let bytes = boekhoud_pdf::render_invoice(&pdf);
-        std::fs::write(
-            std::env::temp_dir().join("boekhoud-voorbeeldfactuur.pdf"),
-            bytes,
-        )
-        .unwrap();
+        std::fs::write(std::env::temp_dir().join("boekhoud-voorbeeldfactuur.pdf"), bytes).unwrap();
     }
 }

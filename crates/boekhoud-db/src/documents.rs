@@ -58,12 +58,7 @@ impl Ledger {
     }
 
     /// Store a file. Identical content is stored once; the existing record is returned.
-    pub fn add_document(
-        &mut self,
-        bytes: &[u8],
-        filename: &str,
-        document_type: &str,
-    ) -> Result<DocumentInfo> {
+    pub fn add_document(&mut self, bytes: &[u8], filename: &str, document_type: &str) -> Result<DocumentInfo> {
         if bytes.is_empty() {
             return Err(DbError::Invalid("leeg bestand".into()));
         }
@@ -106,9 +101,7 @@ impl Ledger {
     fn document_by_sha(&self, sha: &str) -> Result<Option<DocumentInfo>> {
         let id: Option<String> = self
             .conn
-            .query_row("SELECT id FROM document WHERE sha256 = ?1", [sha], |r| {
-                r.get(0)
-            })
+            .query_row("SELECT id FROM document WHERE sha256 = ?1", [sha], |r| r.get(0))
             .optional()?;
         id.map(|id| self.document(&id)).transpose()
     }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/boekhoud-core", "crates/boekhoud-db", "crates/boekhoud-pdf", "app/src-tauri"]
+members = ["crates/boekhoud-core", "crates/boekhoud-db", "crates/boekhoud-pdf", "crates/boekhoud-import", "app/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,6 +11,7 @@ publish = false
 [workspace.dependencies]
 boekhoud-core = { path = "crates/boekhoud-core" }
 boekhoud-db = { path = "crates/boekhoud-db" }
+boekhoud-import = { path = "crates/boekhoud-import" }
 chrono = { version = "0.4", default-features = false, features = ["std", "serde", "clock"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

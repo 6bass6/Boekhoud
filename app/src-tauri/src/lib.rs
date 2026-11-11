@@ -5,14 +5,15 @@
 mod format;
 mod invoicing;
 mod messages;
+mod platforms;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use boekhoud_core::{Account, Currency, EntryDraft, EntryLine, JournalCode, Money, Source};
 use boekhoud_db::{
-    ChainStatus, Company, EntryDetail, EntrySummary, Ledger, LedgerCard, PeriodView, PostedEntry,
-    TaxCode, TrialBalanceRow, VatRegime,
+    ChainStatus, Company, EntryDetail, EntrySummary, Ledger, LedgerCard, PeriodView, PostedEntry, TaxCode,
+    TrialBalanceRow, VatRegime,
 };
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
@@ -96,9 +97,7 @@ fn build_draft(input: NewEntry) -> CmdResult<EntryDraft> {
             (false, true) => Money::parse(d, ',', Currency::EUR),
             (true, false) => Money::parse(c, ',', Currency::EUR).map(|m| -m),
             (true, true) => return Err(format!("Regel {n}: vul een debet- of creditbedrag in.")),
-            (false, false) => {
-                return Err(format!("Regel {n}: vul óf debet óf credit in, niet beide."))
-            }
+            (false, false) => return Err(format!("Regel {n}: vul óf debet óf credit in, niet beide.")),
         }
         .map_err(|_| format!("Regel {n}: ongeldig bedrag."))?;
         lines.push(EntryLine {
@@ -144,11 +143,7 @@ fn post_entry(state: State<AppState>, entry: NewEntry) -> CmdResult<PostedEntry>
 }
 
 #[tauri::command]
-fn list_entries(
-    state: State<AppState>,
-    year: Option<i32>,
-    journal: Option<String>,
-) -> CmdResult<Vec<EntrySummary>> {
+fn list_entries(state: State<AppState>, year: Option<i32>, journal: Option<String>) -> CmdResult<Vec<EntrySummary>> {
     let journal = journal
         .filter(|j| !j.is_empty())
         .map(|j| parse_journal(&j))
@@ -162,12 +157,7 @@ fn entry_detail(state: State<AppState>, id: String) -> CmdResult<EntryDetail> {
 }
 
 #[tauri::command]
-fn reverse_entry(
-    state: State<AppState>,
-    id: String,
-    date: String,
-    reason: String,
-) -> CmdResult<PostedEntry> {
+fn reverse_entry(state: State<AppState>, id: String, date: String, reason: String) -> CmdResult<PostedEntry> {
     let date = parse_date(&date)?;
     if reason.trim().is_empty() {
         return Err("Geef een reden voor de tegenboeking.".into());
@@ -177,10 +167,7 @@ fn reverse_entry(
 
 #[tauri::command]
 fn trial_balance(state: State<AppState>, until: Option<String>) -> CmdResult<Vec<TrialBalanceRow>> {
-    let until = until
-        .filter(|s| !s.is_empty())
-        .map(|s| parse_date(&s))
-        .transpose()?;
+    let until = until.filter(|s| !s.is_empty()).map(|s| parse_date(&s)).transpose()?;
     with_ledger(&state, |l| l.trial_balance(until))
 }
 
@@ -249,12 +236,7 @@ fn vat_regime(state: State<AppState>, date: String) -> CmdResult<VatRegime> {
 }
 
 #[tauri::command]
-fn set_vat_regime(
-    state: State<AppState>,
-    valid_from: String,
-    regime: String,
-    note: String,
-) -> CmdResult<()> {
+fn set_vat_regime(state: State<AppState>, valid_from: String, regime: String, note: String) -> CmdResult<()> {
     let date = parse_date(&valid_from)?;
     let regime = match regime.as_str() {
         "regular" => VatRegime::Regular,
@@ -282,10 +264,7 @@ fn open_ledger(data_dir: &Path) -> Result<Ledger, Box<dyn std::error::Error>> {
         let backups = data_dir.join("backups");
         std::fs::create_dir_all(&backups)?;
         let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-        std::fs::copy(
-            &db_path,
-            backups.join(format!("voor-migratie-{stamp}.sqlite")),
-        )?;
+        std::fs::copy(&db_path, backups.join(format!("voor-migratie-{stamp}.sqlite")))?;
     }
     Ok(Ledger::open(&db_path)?)
 }
@@ -339,7 +318,12 @@ pub fn run() {
             invoicing::register_purchase_payment,
             invoicing::upload_document,
             invoicing::document_content,
-            invoicing::open_document
+            invoicing::open_document,
+            platforms::import_platform_file,
+            platforms::platform_reports,
+            platforms::book_platform_report,
+            platforms::delete_platform_report,
+            platforms::platform_revenue_by_product
         ])
         .run(tauri::generate_context!())
         .expect("error while running Boekhoud");

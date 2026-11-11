@@ -58,10 +58,7 @@ pub struct SalesLine {
 
 impl SalesLine {
     pub fn net_cents(&self) -> Result<i64, InvoiceError> {
-        let v = div_round_half_away(
-            self.quantity_milli as i128 * self.unit_price_cents as i128,
-            1000,
-        );
+        let v = div_round_half_away(self.quantity_milli as i128 * self.unit_price_cents as i128, 1000);
         i64::try_from(v).map_err(|_| InvoiceError::Overflow)
     }
 }
@@ -104,9 +101,7 @@ pub fn sales_totals(lines: &[SalesLine], rules: &[VatRule]) -> Result<InvoiceTot
             return Err(InvoiceError::NotSalesCode(i + 1, l.tax_code.clone()));
         }
         let e = bases.entry(&l.tax_code).or_default();
-        *e = e
-            .checked_add(l.net_cents()?)
-            .ok_or(InvoiceError::Overflow)?;
+        *e = e.checked_add(l.net_cents()?).ok_or(InvoiceError::Overflow)?;
     }
     let mut groups = Vec::new();
     let (mut subtotal, mut vat) = (0i64, 0i64);
@@ -210,10 +205,7 @@ pub fn purchase_vat_suggestion(net_cents: i64, rule: &VatRule) -> i64 {
 }
 
 /// Totals of a purchase invoice: what is owed to the supplier excludes reverse-charged VAT.
-pub fn purchase_totals(
-    lines: &[PurchaseLine],
-    rules: &[VatRule],
-) -> Result<(i64, i64, i64), InvoiceError> {
+pub fn purchase_totals(lines: &[PurchaseLine], rules: &[VatRule]) -> Result<(i64, i64, i64), InvoiceError> {
     if lines.is_empty() {
         return Err(InvoiceError::NoLines);
     }
@@ -230,9 +222,7 @@ pub fn purchase_totals(
                 .ok_or(InvoiceError::Overflow)?;
         }
     }
-    let total = net
-        .checked_add(vat_owed_to_supplier)
-        .ok_or(InvoiceError::Overflow)?;
+    let total = net.checked_add(vat_owed_to_supplier).ok_or(InvoiceError::Overflow)?;
     if total == 0 && net == 0 {
         return Err(InvoiceError::ZeroTotal);
     }
@@ -297,14 +287,13 @@ mod tests {
     use super::*;
 
     pub(crate) fn rules() -> Vec<VatRule> {
-        let r =
-            |code: &str, bp: Option<i64>, pay: Option<&str>, ded: Option<&str>, rc: bool| VatRule {
-                code: code.into(),
-                rate_bp: bp,
-                payable_account: pay.map(Into::into),
-                deductible_account: ded.map(Into::into),
-                reverse_charge: rc,
-            };
+        let r = |code: &str, bp: Option<i64>, pay: Option<&str>, ded: Option<&str>, rc: bool| VatRule {
+            code: code.into(),
+            rate_bp: bp,
+            payable_account: pay.map(Into::into),
+            deductible_account: ded.map(Into::into),
+            reverse_charge: rc,
+        };
         vec![
             r("V21", Some(2100), Some("1510"), None, false),
             r("V9", Some(900), Some("1511"), None, false),
@@ -345,9 +334,9 @@ mod tests {
         let e = sales_entry_lines(&lines, &rules(), "1300").unwrap();
         assert_eq!(sum(&e), 0);
         assert_eq!(e[0].amount.cents, 124_354);
-        assert!(e.iter().any(|l| l.account == "1510"
-            && l.amount.cents == -21_582
-            && l.tax_code.as_deref() == Some("V21")));
+        assert!(e
+            .iter()
+            .any(|l| l.account == "1510" && l.amount.cents == -21_582 && l.tax_code.as_deref() == Some("V21")));
     }
 
     #[test]
@@ -355,20 +344,14 @@ mod tests {
         for code in ["V0EU", "VKOR"] {
             let t = sales_totals(&[line("Lezing", 1000, 50_000, code)], &rules()).unwrap();
             assert_eq!((t.vat_cents, t.total_cents), (0, 50_000));
-            let e =
-                sales_entry_lines(&[line("Lezing", 1000, 50_000, code)], &rules(), "1300").unwrap();
+            let e = sales_entry_lines(&[line("Lezing", 1000, 50_000, code)], &rules(), "1300").unwrap();
             assert_eq!(e.len(), 2);
         }
     }
 
     #[test]
     fn credit_note_mirrors_invoice() {
-        let e = sales_entry_lines(
-            &[line("Creditering lezing", -1000, 100_000, "V21")],
-            &rules(),
-            "1300",
-        )
-        .unwrap();
+        let e = sales_entry_lines(&[line("Creditering lezing", -1000, 100_000, "V21")], &rules(), "1300").unwrap();
         assert_eq!(e[0].amount.cents, -121_000);
         assert_eq!(sum(&e), 0);
     }
@@ -409,15 +392,10 @@ mod tests {
                 vat_cents: 2_100,
             },
         ];
-        assert_eq!(
-            purchase_totals(&lines, &rules()).unwrap(),
-            (20_000, 2_100, 22_100)
-        );
+        assert_eq!(purchase_totals(&lines, &rules()).unwrap(), (20_000, 2_100, 22_100));
         let e = purchase_entry_lines(&lines, &rules(), "1600").unwrap();
         assert_eq!(sum(&e), 0);
-        assert!(e
-            .iter()
-            .any(|l| l.account == "1515" && l.amount.cents == -2_100));
+        assert!(e.iter().any(|l| l.account == "1515" && l.amount.cents == -2_100));
         assert_eq!(
             e.iter()
                 .filter(|l| l.account == "1500")

@@ -88,10 +88,7 @@ impl Money {
 
     pub fn checked_add(self, other: Money) -> Result<Money, MoneyError> {
         self.same_currency(other)?;
-        let cents = self
-            .cents
-            .checked_add(other.cents)
-            .ok_or(MoneyError::Overflow)?;
+        let cents = self.cents.checked_add(other.cents).ok_or(MoneyError::Overflow)?;
         Ok(Money::new(cents, self.currency))
     }
 
@@ -163,12 +160,9 @@ impl Money {
             return Ok(self);
         }
         if units_per_eur_micro <= 0 {
-            return Err(MoneyError::InvalidAmount(format!(
-                "rate {units_per_eur_micro}"
-            )));
+            return Err(MoneyError::InvalidAmount(format!("rate {units_per_eur_micro}")));
         }
-        let cents =
-            div_round_half_away(self.cents as i128 * 1_000_000, units_per_eur_micro as i128);
+        let cents = div_round_half_away(self.cents as i128 * 1_000_000, units_per_eur_micro as i128);
         let cents = i64::try_from(cents).map_err(|_| MoneyError::Overflow)?;
         Ok(Money::eur(cents))
     }
@@ -204,11 +198,7 @@ pub fn parse_rate_micro(s: &str) -> Result<i64, MoneyError> {
     let err = || MoneyError::InvalidAmount(s.to_string());
     let t = s.trim().replace(',', ".");
     let (i, f) = t.split_once('.').unwrap_or((t.as_str(), ""));
-    if i.is_empty()
-        || f.len() > 6
-        || !i.chars().all(|c| c.is_ascii_digit())
-        || !f.chars().all(|c| c.is_ascii_digit())
-    {
+    if i.is_empty() || f.len() > 6 || !i.chars().all(|c| c.is_ascii_digit()) || !f.chars().all(|c| c.is_ascii_digit()) {
         return Err(err());
     }
     let int: i64 = i.parse().map_err(|_| err())?;
@@ -260,19 +250,13 @@ mod tests {
 
     #[test]
     fn vat_rounding_half_away_from_zero() {
-        assert_eq!(
-            Money::eur(10_000).apply_basis_points(2100).unwrap().cents,
-            2_100
-        );
+        assert_eq!(Money::eur(10_000).apply_basis_points(2100).unwrap().cents, 2_100);
         // 0.50 cent rounds up: 2.38 * 21% = 0.4998 -> 0.50
         assert_eq!(Money::eur(238).apply_basis_points(2100).unwrap().cents, 50);
         // 0.05 * 9% = 0.0045 -> 0.00 ; 0.06 * 9% = 0.0054 -> 0.01
         assert_eq!(Money::eur(5).apply_basis_points(900).unwrap().cents, 0);
         assert_eq!(Money::eur(6).apply_basis_points(900).unwrap().cents, 1);
-        assert_eq!(
-            Money::eur(-238).apply_basis_points(2100).unwrap().cents,
-            -50
-        );
+        assert_eq!(Money::eur(-238).apply_basis_points(2100).unwrap().cents, -50);
     }
 
     #[test]
@@ -291,13 +275,7 @@ mod tests {
         let usd = Money::new(10_823, Currency::USD);
         assert_eq!(usd.to_eur(1_082_300).unwrap(), Money::eur(10_000));
         // USD 1.00 at 1.0823 = 0.92396... -> 0.92
-        assert_eq!(
-            Money::new(100, Currency::USD)
-                .to_eur(1_082_300)
-                .unwrap()
-                .cents,
-            92
-        );
+        assert_eq!(Money::new(100, Currency::USD).to_eur(1_082_300).unwrap().cents, 92);
         assert_eq!(Money::eur(5).to_eur(1).unwrap(), Money::eur(5));
     }
 

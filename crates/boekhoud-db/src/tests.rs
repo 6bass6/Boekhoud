@@ -105,10 +105,7 @@ fn unbalanced_and_unknown_account_are_rejected() {
         JournalCode::MEM,
         d(2026, 11, 1),
         "x",
-        vec![
-            EntryLine::debit("7777", 100),
-            EntryLine::credit("1600", 100),
-        ],
+        vec![EntryLine::debit("7777", 100), EntryLine::credit("1600", 100)],
     );
     match l.post(&unknown) {
         Err(DbError::Validation(e)) => {
@@ -124,25 +121,20 @@ fn database_refuses_to_alter_posted_data() {
     let p = l.post(&talk_invoice(d(2026, 11, 1))).unwrap();
     let c = l.conn();
     assert!(c
-        .execute(
-            "UPDATE journal_entry SET description='x' WHERE id=?1",
-            [&p.id]
-        )
+        .execute("UPDATE journal_entry SET description='x' WHERE id=?1", [&p.id])
         .is_err());
+    assert!(c.execute("DELETE FROM journal_entry WHERE id=?1", [&p.id]).is_err());
     assert!(c
-        .execute("DELETE FROM journal_entry WHERE id=?1", [&p.id])
-        .is_err());
-    assert!(c
-        .execute(
-            "UPDATE journal_line SET amount_cents=1 WHERE entry_id=?1",
-            [&p.id]
-        )
+        .execute("UPDATE journal_line SET amount_cents=1 WHERE entry_id=?1", [&p.id])
         .is_err());
     assert!(c
         .execute("DELETE FROM journal_line WHERE entry_id=?1", [&p.id])
         .is_err());
     assert!(c
-        .execute("INSERT INTO journal_line (entry_id,line_no,account,amount_cents) VALUES (?1,9,'4900',5)", [&p.id])
+        .execute(
+            "INSERT INTO journal_line (entry_id,line_no,account,amount_cents) VALUES (?1,9,'4900',5)",
+            [&p.id]
+        )
         .is_err());
     assert!(c.execute("DELETE FROM audit_log", []).is_err());
 }
@@ -157,8 +149,16 @@ fn database_refuses_to_post_unbalanced_even_bypassing_rust() {
         [],
     )
     .unwrap();
-    c.execute("INSERT INTO journal_line (entry_id,line_no,account,amount_cents) VALUES ('x',1,'4900',100)", []).unwrap();
-    c.execute("INSERT INTO journal_line (entry_id,line_no,account,amount_cents) VALUES ('x',2,'1600',-99)", []).unwrap();
+    c.execute(
+        "INSERT INTO journal_line (entry_id,line_no,account,amount_cents) VALUES ('x',1,'4900',100)",
+        [],
+    )
+    .unwrap();
+    c.execute(
+        "INSERT INTO journal_line (entry_id,line_no,account,amount_cents) VALUES ('x',2,'1600',-99)",
+        [],
+    )
+    .unwrap();
     let r = c.execute(
         "UPDATE journal_entry SET status='posted', sequence=1, chain_index=1, prev_hash='0', hash='0', posted_at='now' WHERE id='x'",
         [],
@@ -180,11 +180,9 @@ fn closed_period_blocks_posting_until_reopened() {
     l.post(&talk_invoice(d(2026, 11, 3))).unwrap();
     let n: i64 = l
         .conn()
-        .query_row(
-            "SELECT COUNT(*) FROM audit_log WHERE entity_type='period'",
-            [],
-            |r| r.get(0),
-        )
+        .query_row("SELECT COUNT(*) FROM audit_log WHERE entity_type='period'", [], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(n, 2);
 }
@@ -193,15 +191,9 @@ fn closed_period_blocks_posting_until_reopened() {
 fn reversal_nets_to_zero_and_only_once() {
     let mut l = Ledger::open_in_memory().unwrap();
     let p = l.post(&talk_invoice(d(2026, 11, 1))).unwrap();
-    let r = l
-        .reverse(&p.id, d(2026, 11, 20), "Verkeerd bedrag")
-        .unwrap();
+    let r = l.reverse(&p.id, d(2026, 11, 20), "Verkeerd bedrag").unwrap();
     assert_eq!(r.number(), "VRK-2026-0002");
-    assert!(l
-        .trial_balance(None)
-        .unwrap()
-        .iter()
-        .all(|row| row.balance_cents == 0));
+    assert!(l.trial_balance(None).unwrap().iter().all(|row| row.balance_cents == 0));
     assert!(matches!(
         l.reverse(&p.id, d(2026, 11, 21), "nogmaals"),
         Err(DbError::AlreadyReversed(_))
@@ -229,22 +221,10 @@ fn trial_balance_totals_match() {
     let debit: i64 = tb.iter().map(|r| r.debit_cents).sum();
     let credit: i64 = tb.iter().map(|r| r.credit_cents).sum();
     assert_eq!(debit, credit);
-    assert_eq!(
-        tb.iter()
-            .find(|r| r.account == "1310")
-            .unwrap()
-            .balance_cents,
-        0
-    );
+    assert_eq!(tb.iter().find(|r| r.account == "1310").unwrap().balance_cents, 0);
     // Cut-off date excludes the December payout.
     let nov = l.trial_balance(Some(d(2026, 11, 30))).unwrap();
-    assert_eq!(
-        nov.iter()
-            .find(|r| r.account == "1310")
-            .unwrap()
-            .balance_cents,
-        85_000
-    );
+    assert_eq!(nov.iter().find(|r| r.account == "1310").unwrap().balance_cents, 85_000);
 }
 
 #[test]
@@ -339,10 +319,7 @@ fn kor_regime_controls_which_codes_are_allowed() {
 
     l.set_vat_regime(d(2027, 1, 1), VatRegime::Kor, "Aangemeld voor KOR")
         .unwrap();
-    assert_eq!(
-        l.vat_regime_on(d(2026, 12, 31)).unwrap(),
-        VatRegime::Regular
-    );
+    assert_eq!(l.vat_regime_on(d(2026, 12, 31)).unwrap(), VatRegime::Regular);
     assert_eq!(l.vat_regime_on(d(2027, 3, 1)).unwrap(), VatRegime::Kor);
 
     // KOR: VKOR allowed, V21 refused, regime-neutral V0EU (Apple) still allowed.
@@ -350,9 +327,9 @@ fn kor_regime_controls_which_codes_are_allowed() {
     k.date = d(2027, 2, 1);
     l.post(&k).unwrap();
     match l.post(&talk_with_code(d(2027, 2, 1), "V21")) {
-        Err(DbError::Validation(e)) => assert!(
-            matches!(&e[0], ValidationError::TaxCodeNotAllowed { code, .. } if code == "V21")
-        ),
+        Err(DbError::Validation(e)) => {
+            assert!(matches!(&e[0], ValidationError::TaxCodeNotAllowed { code, .. } if code == "V21"))
+        }
         other => panic!("{other:?}"),
     }
     let mut apple = apple_report("apple:2027-01:EUR");
@@ -363,8 +340,7 @@ fn kor_regime_controls_which_codes_are_allowed() {
 #[test]
 fn exchange_rate_falls_back_to_last_published_day() {
     let mut l = Ledger::open_in_memory().unwrap();
-    l.add_exchange_rate(d(2026, 11, 6), "USD", 1_082_300, "ECB")
-        .unwrap(); // Friday
+    l.add_exchange_rate(d(2026, 11, 6), "USD", 1_082_300, "ECB").unwrap(); // Friday
     let (date, rate) = l.exchange_rate_on(d(2026, 11, 8), "USD").unwrap().unwrap(); // Sunday
     assert_eq!(date, d(2026, 11, 6));
     assert_eq!(
@@ -390,18 +366,12 @@ fn entry_list_and_detail_show_reversal_links() {
     let orig = l.entry_detail(&p.id).unwrap();
     assert_eq!(orig.summary.number, "VRK-2026-0001");
     assert_eq!(orig.summary.total_debit_cents, 121_000);
-    assert_eq!(
-        orig.summary.reversed_by_entry_id.as_deref(),
-        Some(r.id.as_str())
-    );
+    assert_eq!(orig.summary.reversed_by_entry_id.as_deref(), Some(r.id.as_str()));
     assert_eq!(orig.lines.len(), 3);
     assert_eq!(orig.lines[1].account_name, "Omzet lezingen");
     assert_eq!(orig.hash, p.hash);
     let rev = l.entry_detail(&r.id).unwrap();
-    assert_eq!(
-        rev.summary.reverses_entry_id.as_deref(),
-        Some(p.id.as_str())
-    );
+    assert_eq!(rev.summary.reverses_entry_id.as_deref(), Some(p.id.as_str()));
     assert!(matches!(l.entry_detail("nope"), Err(DbError::NotFound(_))));
 }
 
@@ -413,10 +383,7 @@ fn ledger_card_carries_balance_sheet_accounts_forward() {
         JournalCode::BNK,
         d(2027, 1, 10),
         "Betaling lezing",
-        vec![
-            EntryLine::debit("1100", 121_000),
-            EntryLine::credit("1300", 121_000),
-        ],
+        vec![EntryLine::debit("1100", 121_000), EntryLine::credit("1300", 121_000)],
     ))
     .unwrap();
     l.post(&talk_invoice(d(2027, 2, 1))).unwrap();
@@ -432,10 +399,7 @@ fn ledger_card_carries_balance_sheet_accounts_forward() {
     let rev = l.ledger_card("8100", 2027).unwrap();
     assert_eq!(rev.opening_cents, 0);
     assert_eq!(rev.closing_cents, -100_000);
-    assert!(matches!(
-        l.ledger_card("7777", 2027),
-        Err(DbError::NotFound(_))
-    ));
+    assert!(matches!(l.ledger_card("7777", 2027), Err(DbError::NotFound(_))));
 }
 
 #[test]
@@ -464,11 +428,9 @@ fn company_is_saved_and_audited() {
     assert!(l.save_company(&Company::default()).is_err());
     let n: i64 = l
         .conn()
-        .query_row(
-            "SELECT COUNT(*) FROM audit_log WHERE entity_type='company'",
-            [],
-            |r| r.get(0),
-        )
+        .query_row("SELECT COUNT(*) FROM audit_log WHERE entity_type='company'", [], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(n, 2);
 }
@@ -552,14 +514,8 @@ fn issuing_requires_dutch_invoice_details() {
         .create_sales_invoice(&invoice_input(&c, d(2026, 11, 1), "V21"))
         .unwrap();
     let req = l.sales_issue_requirements(&inv).unwrap();
-    assert!(req
-        .missing
-        .iter()
-        .any(|m| m.contains("ondernemingsgegevens")));
-    assert!(matches!(
-        l.issue_sales_invoice(&inv),
-        Err(DbError::Invalid(_))
-    ));
+    assert!(req.missing.iter().any(|m| m.contains("ondernemingsgegevens")));
+    assert!(matches!(l.issue_sales_invoice(&inv), Err(DbError::Invalid(_))));
     complete_company(&mut l);
     assert!(l.sales_issue_requirements(&inv).unwrap().missing.is_empty());
 
@@ -619,10 +575,7 @@ fn issue_assigns_gapless_numbers_and_posts() {
     // The database itself refuses to alter an issued invoice.
     assert!(l
         .conn()
-        .execute(
-            "UPDATE sales_invoice SET total_cents = 1 WHERE id = ?1",
-            [&a]
-        )
+        .execute("UPDATE sales_invoice SET total_cents = 1 WHERE id = ?1", [&a])
         .is_err());
     assert!(l
         .conn()
@@ -643,15 +596,10 @@ fn payments_and_credit_notes_settle_invoices() {
         .create_sales_invoice(&invoice_input(&c, d(2026, 11, 1), "V21"))
         .unwrap();
     l.issue_sales_invoice(&a).unwrap();
-    l.register_sales_payment(&a, d(2026, 11, 10), 21_000, "bank")
-        .unwrap();
+    l.register_sales_payment(&a, d(2026, 11, 10), 21_000, "bank").unwrap();
     let s = &l.sales_invoices(Some(2026)).unwrap()[0];
-    assert_eq!(
-        (s.open_cents, s.state.as_str()),
-        (100_000, "partially_paid")
-    );
-    l.register_sales_payment(&a, d(2026, 11, 20), 100_000, "bank")
-        .unwrap();
+    assert_eq!((s.open_cents, s.state.as_str()), (100_000, "partially_paid"));
+    l.register_sales_payment(&a, d(2026, 11, 20), 100_000, "bank").unwrap();
     assert_eq!(l.sales_invoice(&a).unwrap().summary.state, "paid");
 
     // A credited invoice is settled by its credit note.
@@ -669,13 +617,7 @@ fn payments_and_credit_notes_settle_invoices() {
     assert!(l.create_credit_note(&cn, d(2026, 11, 5)).is_err());
 
     let tb = l.trial_balance(None).unwrap();
-    assert_eq!(
-        tb.iter()
-            .find(|r| r.account == "1300")
-            .unwrap()
-            .balance_cents,
-        0
-    );
+    assert_eq!(tb.iter().find(|r| r.account == "1300").unwrap().balance_cents, 0);
 }
 
 #[test]
@@ -685,8 +627,7 @@ fn kor_invoice_needs_no_vat_id_and_charges_no_vat() {
     let mut co = l.company().unwrap().unwrap();
     co.vat_number = None;
     l.save_company(&co).unwrap();
-    l.set_vat_regime(d(2026, 1, 1), VatRegime::Kor, "test")
-        .unwrap();
+    l.set_vat_regime(d(2026, 1, 1), VatRegime::Kor, "test").unwrap();
     let c = customer(&mut l, None);
     let inv = l
         .create_sales_invoice(&invoice_input(&c, d(2026, 11, 1), "VKOR"))
@@ -735,17 +676,11 @@ fn purchase_invoice_posts_and_detects_duplicates() {
         (p.total_cents, p.open_cents, p.state.as_str()),
         (12_100, 12_100, "open")
     );
-    assert!(matches!(
-        l.register_purchase_invoice(&input),
-        Err(DbError::Invalid(_))
-    ));
+    assert!(matches!(l.register_purchase_invoice(&input), Err(DbError::Invalid(_))));
     l.register_purchase_payment(&p.id, d(2026, 11, 5), 12_100, "bank")
         .unwrap();
     assert_eq!(l.purchase_invoice(&p.id).unwrap().summary.state, "paid");
-    assert!(l
-        .conn()
-        .execute("DELETE FROM purchase_invoice", [])
-        .is_err());
+    assert!(l.conn().execute("DELETE FROM purchase_invoice", []).is_err());
 
     // Paid privately: credit Privé-stortingen, nothing open.
     let private = PurchaseInput {
@@ -756,27 +691,12 @@ fn purchase_invoice_posts_and_detects_duplicates() {
     let pp = l.register_purchase_invoice(&private).unwrap();
     assert_eq!((pp.open_cents, pp.state.as_str()), (0, "paid_privately"));
     let tb = l.trial_balance(None).unwrap();
-    assert_eq!(
-        tb.iter()
-            .find(|r| r.account == "0510")
-            .unwrap()
-            .balance_cents,
-        -12_100
-    );
-    assert_eq!(
-        tb.iter()
-            .find(|r| r.account == "1600")
-            .unwrap()
-            .balance_cents,
-        0
-    );
+    assert_eq!(tb.iter().find(|r| r.account == "0510").unwrap().balance_cents, -12_100);
+    assert_eq!(tb.iter().find(|r| r.account == "1600").unwrap().balance_cents, 0);
 
     // Reversing the entry marks the invoice as reversed.
     l.reverse(&pp.entry_id, d(2026, 11, 6), "dubbel").unwrap();
-    assert_eq!(
-        l.purchase_invoice(&pp.id).unwrap().summary.state,
-        "reversed"
-    );
+    assert_eq!(l.purchase_invoice(&pp.id).unwrap().summary.state, "reversed");
 }
 
 #[test]
@@ -784,23 +704,129 @@ fn documents_are_deduplicated_verified_and_retained() {
     let dir = std::env::temp_dir().join(format!("boekhoud-docs-{}", uuid::Uuid::now_v7()));
     let mut l = Ledger::open_in_memory().unwrap();
     l.set_document_root(&dir);
-    let a = l
-        .add_document(b"%PDF-1.4 fictief", "bon.pdf", "receipt")
-        .unwrap();
-    let b = l
-        .add_document(b"%PDF-1.4 fictief", "kopie.pdf", "receipt")
-        .unwrap();
+    let a = l.add_document(b"%PDF-1.4 fictief", "bon.pdf", "receipt").unwrap();
+    let b = l.add_document(b"%PDF-1.4 fictief", "kopie.pdf", "receipt").unwrap();
     assert_eq!(a.id, b.id);
     assert_eq!(a.mime_type, "application/pdf");
     let (_, bytes) = l.document_bytes(&a.id).unwrap();
     assert_eq!(bytes, b"%PDF-1.4 fictief");
-    assert!(l
-        .conn()
-        .execute("DELETE FROM document WHERE id = ?1", [&a.id])
-        .is_err());
+    assert!(l.conn().execute("DELETE FROM document WHERE id = ?1", [&a.id]).is_err());
 
     // Tampering with the file on disk is detected.
     std::fs::write(l.document_path(&a.id).unwrap(), b"changed").unwrap();
     assert!(matches!(l.document_bytes(&a.id), Err(DbError::Corrupt(_))));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2c: platform reports
+// ---------------------------------------------------------------------------
+
+fn ledger_with_docs() -> (Ledger, std::path::PathBuf) {
+    let dir = std::env::temp_dir().join(format!("boekhoud-plt-{}", uuid::Uuid::now_v7()));
+    let mut l = Ledger::open_in_memory().unwrap();
+    l.set_document_root(&dir);
+    (l, dir)
+}
+
+fn apple_input() -> PlatformReportInput {
+    PlatformReportInput {
+        platform: "apple".into(),
+        period_start: d(2026, 9, 28),
+        period_end: d(2026, 10, 31),
+        currencies: vec![
+            CurrencyAmount {
+                currency: "EUR".into(),
+                units: 9,
+                amount_cents: 630,
+            },
+            CurrencyAmount {
+                currency: "USD".into(),
+                units: 3,
+                amount_cents: 630,
+            },
+        ],
+        products: vec![ProductAmount {
+            product: "Voorbeeld App".into(),
+            currency: "EUR".into(),
+            units: 9,
+            amount_cents: 630,
+        }],
+        breakdown: serde_json::json!({}),
+    }
+}
+
+#[test]
+fn platform_report_imports_once_and_books_euro_proceeds() {
+    let (mut l, dir) = ledger_with_docs();
+    let id = l
+        .import_platform_report(&apple_input(), b"fictief rapport", "apple_okt.txt")
+        .unwrap();
+    assert!(matches!(
+        l.import_platform_report(&apple_input(), b"fictief rapport", "kopie.txt"),
+        Err(DbError::Invalid(_))
+    ));
+
+    // Every currency needs a euro amount; EUR must match the report.
+    assert!(l
+        .book_platform_report(
+            &id,
+            &[EurAmount {
+                currency: "EUR".into(),
+                eur_cents: 630
+            }]
+        )
+        .is_err());
+    assert!(l
+        .book_platform_report(
+            &id,
+            &[
+                EurAmount {
+                    currency: "EUR".into(),
+                    eur_cents: 600
+                },
+                EurAmount {
+                    currency: "USD".into(),
+                    eur_cents: 580
+                }
+            ]
+        )
+        .is_err());
+    l.book_platform_report(
+        &id,
+        &[
+            EurAmount {
+                currency: "EUR".into(),
+                eur_cents: 630,
+            },
+            EurAmount {
+                currency: "USD".into(),
+                eur_cents: 580,
+            },
+        ],
+    )
+    .unwrap();
+    let r = l.platform_report(&id).unwrap();
+    assert_eq!(r.proceeds_eur_cents, Some(1_210));
+    assert!(l.book_platform_report(&id, &[]).is_err());
+    assert!(l.delete_platform_report(&id).is_err());
+
+    let tb = l.trial_balance(None).unwrap();
+    assert_eq!(tb.iter().find(|r| r.account == "1310").unwrap().balance_cents, 1_210);
+    assert_eq!(tb.iter().find(|r| r.account == "8000").unwrap().balance_cents, -1_210);
+    let entries = l.list_entries(None, Some(JournalCode::PLT), 10).unwrap();
+    assert_eq!(entries[0].date, d(2026, 10, 31));
+    assert_eq!(l.platform_revenue_by_product(2026).unwrap().len(), 1);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn overlapping_platform_reports_are_flagged_and_unbooked_can_be_deleted() {
+    let (mut l, dir) = ledger_with_docs();
+    let a = l.import_platform_report(&apple_input(), b"regio 1", "a.txt").unwrap();
+    let b = l.import_platform_report(&apple_input(), b"regio 2", "b.txt").unwrap();
+    assert_eq!(l.platform_report(&a).unwrap().overlapping, vec![b.clone()]);
+    l.delete_platform_report(&b).unwrap();
+    assert!(l.platform_report(&a).unwrap().overlapping.is_empty());
     std::fs::remove_dir_all(&dir).ok();
 }

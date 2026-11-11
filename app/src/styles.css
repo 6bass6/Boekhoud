@@ -78,3 +78,5 @@ input.short { width: 70px; }
 .tag.state-partially_paid { background: #fff4e0; color: #9a5b00; }
 .tag.state-draft { background: #f0f2f5; color: #6b7480; }
 .panel button + button { margin-left: 0; }
+.primary-file { background: var(--accent); color: #fff; border-style: solid; margin-top: 0; }
+.panel a, main a { color: var(--accent); cursor: pointer; text-decoration: underline; }

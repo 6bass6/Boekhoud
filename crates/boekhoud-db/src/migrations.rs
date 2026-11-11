@@ -9,10 +9,8 @@ pub const MIGRATIONS: &[(u32, &str)] = &[
     (1, include_str!("../migrations/0001_core.sql")),
     (2, include_str!("../migrations/0002_seed_chart.sql")),
     (3, include_str!("../migrations/0003_tax_and_rates.sql")),
-    (
-        4,
-        include_str!("../migrations/0004_invoicing_documents.sql"),
-    ),
+    (4, include_str!("../migrations/0004_invoicing_documents.sql")),
+    (5, include_str!("../migrations/0005_platforms.sql")),
 ];
 
 fn ensure_table(conn: &Connection) -> Result<()> {
@@ -52,10 +50,7 @@ pub fn apply(conn: &Connection) -> Result<()> {
         }
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(sql)?;
-        tx.execute(
-            "INSERT INTO schema_migrations (version) VALUES (?1)",
-            params![version],
-        )?;
+        tx.execute("INSERT INTO schema_migrations (version) VALUES (?1)", params![version])?;
         tx.commit()?;
     }
     Ok(())

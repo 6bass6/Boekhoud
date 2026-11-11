@@ -7,6 +7,7 @@ mod company;
 mod contacts;
 mod documents;
 mod migrations;
+mod platforms;
 mod purchases;
 mod queries;
 mod sales;
@@ -16,9 +17,7 @@ use std::path::Path;
 
 use boekhoud_core::hash::{chain_hash, CanonicalEntry, CanonicalLine, GENESIS_HASH};
 use boekhoud_core::journal::reversal_of;
-use boekhoud_core::{
-    Account, AccountType, Currency, EntryDraft, EntryLine, JournalCode, Money, ValidationError,
-};
+use boekhoud_core::{Account, AccountType, Currency, EntryDraft, EntryLine, JournalCode, Money, ValidationError};
 use chrono::{Datelike, NaiveDate, Utc};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
@@ -28,6 +27,9 @@ pub use company::Company;
 pub use contacts::Contact;
 pub use documents::{mime_from_filename, DocumentInfo};
 pub use migrations::MIGRATIONS;
+pub use platforms::{
+    CurrencyAmount, EurAmount, PlatformConfig, PlatformReportInput, PlatformReportView, ProductAmount, ProductRevenue,
+};
 pub use purchases::{PurchaseInput, PurchaseInvoiceDetail, PurchaseInvoiceSummary};
 pub use queries::{EntryDetail, EntrySummary, LedgerCard, LedgerCardRow, LineView, PeriodView};
 pub use sales::{IssueRequirements, SalesInvoiceDetail, SalesInvoiceInput, SalesInvoiceSummary};
@@ -72,12 +74,7 @@ pub struct PostedEntry {
 impl PostedEntry {
     /// Human-readable entry number, e.g. `VRK-2026-0007`.
     pub fn number(&self) -> String {
-        format!(
-            "{}-{}-{:04}",
-            self.journal.as_str(),
-            self.fiscal_year,
-            self.sequence
-        )
+        format!("{}-{}-{:04}", self.journal.as_str(), self.fiscal_year, self.sequence)
     }
 }
 
@@ -150,26 +147,21 @@ impl Ledger {
 
     /// Consistent online backup of the database to `dest`.
     pub fn backup_to(&self, dest: &Path) -> Result<()> {
-        self.conn
-            .execute("VACUUM INTO ?1", params![dest.to_string_lossy()])?;
+        self.conn.execute("VACUUM INTO ?1", params![dest.to_string_lossy()])?;
         Ok(())
     }
 
     pub fn accounts(&self) -> Result<Vec<Account>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT number, name, account_type, rgs_code, active FROM account ORDER BY number",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT number, name, account_type, rgs_code, active FROM account ORDER BY number")?;
         let rows = stmt.query_map([], |r| {
             let t: String = r.get(2)?;
             Ok(Account {
                 number: r.get(0)?,
                 name: r.get(1)?,
                 account_type: t.parse().map_err(|e: String| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        2,
-                        rusqlite::types::Type::Text,
-                        e.into(),
-                    )
+                    rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, e.into())
                 })?,
                 rgs_code: r.get(3)?,
                 active: r.get(4)?,
@@ -186,21 +178,14 @@ impl Ledger {
 
     fn post_inner(&mut self, draft: &EntryDraft, reverses: Option<&str>) -> Result<PostedEntry> {
         let actor = self.actor.clone();
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let posted = post_in_tx(&tx, &actor, draft, reverses)?;
         tx.commit()?;
         Ok(posted)
     }
 
     /// Fully reverse a posted entry with a new entry dated `date`.
-    pub fn reverse(
-        &mut self,
-        entry_id: &str,
-        date: NaiveDate,
-        reason: &str,
-    ) -> Result<PostedEntry> {
+    pub fn reverse(&mut self, entry_id: &str, date: NaiveDate, reason: &str) -> Result<PostedEntry> {
         let (journal, year, sequence, status): (String, i32, Option<i64>, String) = self
             .conn
             .query_row(
@@ -221,14 +206,9 @@ impl Ledger {
         if already {
             return Err(DbError::AlreadyReversed(entry_id.to_string()));
         }
-        let journal = JournalCode::parse(&journal)
-            .ok_or_else(|| DbError::Corrupt(format!("unknown journal {journal}")))?;
-        let number = format!(
-            "{}-{}-{:04}",
-            journal.as_str(),
-            year,
-            sequence.unwrap_or_default()
-        );
+        let journal =
+            JournalCode::parse(&journal).ok_or_else(|| DbError::Corrupt(format!("unknown journal {journal}")))?;
+        let number = format!("{}-{}-{:04}", journal.as_str(), year, sequence.unwrap_or_default());
         let lines = self.entry_lines(entry_id)?;
         let draft = reversal_of(
             &lines,
@@ -247,13 +227,7 @@ impl Ledger {
         )?;
         let rows = stmt.query_map([entry_id], |r| {
             let cur: String = r.get(2)?;
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, i64>(1)?,
-                cur,
-                r.get(3)?,
-                r.get(4)?,
-            ))
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, cur, r.get(3)?, r.get(4)?))
         })?;
         let mut out = Vec::new();
         for row in rows {
@@ -277,20 +251,12 @@ impl Ledger {
     /// Reopen a closed month. Requires a reason, which is recorded in the audit log.
     pub fn reopen_period(&mut self, year: i32, month: u32, reason: &str) -> Result<()> {
         if reason.trim().is_empty() {
-            return Err(DbError::Validation(vec![
-                ValidationError::MissingDescription,
-            ]));
+            return Err(DbError::Validation(vec![ValidationError::MissingDescription]));
         }
         self.set_period(year, month, "open", Some(reason))
     }
 
-    fn set_period(
-        &mut self,
-        year: i32,
-        month: u32,
-        status: &str,
-        reason: Option<&str>,
-    ) -> Result<()> {
+    fn set_period(&mut self, year: i32, month: u32, status: &str, reason: Option<&str>) -> Result<()> {
         if !(1..=12).contains(&month) {
             return Err(DbError::NotFound(format!("period {year}-{month}")));
         }
@@ -350,13 +316,7 @@ impl Ledger {
             let t: String = r.get(2)?;
             let debit: i64 = r.get(3)?;
             let credit: i64 = r.get(4)?;
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                t,
-                debit,
-                credit,
-            ))
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, t, debit, credit))
         })?;
         let mut out = Vec::new();
         for row in rows {
@@ -414,10 +374,8 @@ impl Ledger {
             .collect::<std::result::Result<_, _>>()?;
 
         let mut expected_prev = GENESIS_HASH.to_string();
-        for (
-            expected_index,
-            (id, journal, year, seq, date, desc, kind, src_ref, reverses, idx, prev, stored),
-        ) in (1i64..).zip(entries.iter())
+        for (expected_index, (id, journal, year, seq, date, desc, kind, src_ref, reverses, idx, prev, stored)) in
+            (1i64..).zip(entries.iter())
         {
             let lines = self.entry_lines(id)?;
             let canonical = CanonicalEntry {
@@ -504,9 +462,7 @@ pub(crate) fn post_in_tx(
     let mut errors = Vec::new();
     for acc in draft.accounts() {
         let active: Option<bool> = tx
-            .query_row("SELECT active FROM account WHERE number = ?1", [acc], |r| {
-                r.get(0)
-            })
+            .query_row("SELECT active FROM account WHERE number = ?1", [acc], |r| r.get(0))
             .optional()?;
         match active {
             None => errors.push(ValidationError::UnknownAccount(acc.to_string())),
@@ -515,11 +471,7 @@ pub(crate) fn post_in_tx(
         }
     }
     let regime = tax::regime_on(tx, draft.date)?;
-    let codes: std::collections::BTreeSet<&str> = draft
-        .lines
-        .iter()
-        .filter_map(|l| l.tax_code.as_deref())
-        .collect();
+    let codes: std::collections::BTreeSet<&str> = draft.lines.iter().filter_map(|l| l.tax_code.as_deref()).collect();
     for code in codes {
         match tax::code_on(tx, code, draft.date)? {
             None => errors.push(ValidationError::UnknownTaxCode(code.to_string())),
@@ -639,14 +591,7 @@ pub(crate) fn post_in_tx(
     tx.execute(
         "UPDATE journal_entry SET status='posted', sequence=?2, chain_index=?3, prev_hash=?4,
              hash=?5, posted_at=?6 WHERE id=?1",
-        params![
-            id,
-            sequence,
-            chain_index,
-            prev_hash,
-            hash,
-            Utc::now().to_rfc3339()
-        ],
+        params![id, sequence, chain_index, prev_hash, hash, Utc::now().to_rfc3339()],
     )?;
 
     let posted = PostedEntry {

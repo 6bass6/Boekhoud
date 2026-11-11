@@ -60,11 +60,7 @@ pub fn rate(bp: i64) -> String {
     if bp.rem_euclid(100) == 0 {
         format!("{}%", bp / 100)
     } else {
-        format!(
-            "{},{}%",
-            bp / 100,
-            format!("{:02}", bp % 100).trim_end_matches('0')
-        )
+        format!("{},{}%", bp / 100, format!("{:02}", bp % 100).trim_end_matches('0'))
     }
 }
 

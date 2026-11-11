@@ -3,17 +3,19 @@ import { api } from "./api";
 import { useLoad } from "./hooks";
 import { Contacts } from "./views/Contacts";
 import { Entries } from "./views/Entries";
+import { Platforms } from "./views/Platforms";
 import { Purchases } from "./views/Purchases";
 import { SalesInvoices } from "./views/SalesInvoices";
 import { NewEntry } from "./views/NewEntry";
 import { ChartOfAccounts, LedgerCardView, TrialBalance } from "./views/Reports";
 import { Periods, Settings } from "./views/Settings";
 
-type View = "verkoop" | "inkoop" | "contacten" | "boekingen" | "nieuw" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
+type View = "verkoop" | "inkoop" | "platformen" | "contacten" | "boekingen" | "nieuw" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
 
 const nav: { view: View; label: string; section?: string }[] = [
   { view: "verkoop", label: "Verkoopfacturen", section: "Administratie" },
   { view: "inkoop", label: "Inkoopfacturen" },
+  { view: "platformen", label: "Platformen" },
   { view: "contacten", label: "Contacten" },
   { view: "boekingen", label: "Boekingen", section: "Boekhouding" },
   { view: "nieuw", label: "Nieuwe boeking" },
@@ -53,6 +55,7 @@ export function App() {
         {info.error && <p className="error">{info.error}</p>}
         {view === "verkoop" && <SalesInvoices year={year} />}
         {view === "inkoop" && <Purchases year={year} />}
+        {view === "platformen" && <Platforms year={year} />}
         {view === "contacten" && <Contacts />}
         {view === "boekingen" && <Entries year={year} />}
         {view === "nieuw" && <NewEntry onPosted={() => undefined} />}

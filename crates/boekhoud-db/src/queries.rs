@@ -79,9 +79,8 @@ const SUMMARY_SELECT: &str = "
     FROM journal_entry e";
 
 fn parse_date(i: usize, s: &str) -> rusqlite::Result<NaiveDate> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(i, rusqlite::types::Type::Text, e.into())
-    })
+    NaiveDate::parse_from_str(s, "%Y-%m-%d")
+        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(i, rusqlite::types::Type::Text, e.into()))
 }
 
 fn number(journal: &str, year: i32, seq: i64) -> String {
@@ -122,10 +121,7 @@ impl Ledger {
              WHERE e.status = 'posted' AND (?1 IS NULL OR e.fiscal_year = ?1) AND (?2 IS NULL OR e.journal = ?2)
              ORDER BY e.entry_date DESC, e.chain_index DESC LIMIT ?3"
         ))?;
-        let rows = stmt.query_map(
-            params![year, journal.map(|j| j.as_str()), limit],
-            summary_from_row,
-        )?;
+        let rows = stmt.query_map(params![year, journal.map(|j| j.as_str()), limit], summary_from_row)?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
@@ -138,13 +134,7 @@ impl Ledger {
                             (SELECT posted_at, hash FROM journal_entry WHERE id = ?1)"
                 ),
                 [entry_id],
-                |r| {
-                    Ok((
-                        summary_from_row(r)?,
-                        r.get::<_, String>(11)?,
-                        r.get::<_, String>(12)?,
-                    ))
-                },
+                |r| Ok((summary_from_row(r)?, r.get::<_, String>(11)?, r.get::<_, String>(12)?)),
             )
             .optional()?
             .ok_or_else(|| DbError::NotFound(entry_id.to_string()))?;
@@ -207,11 +197,7 @@ impl Ledger {
         let mut balance = opening;
         let mut rows = Vec::new();
         let raw = stmt.query_map(
-            params![
-                account,
-                format!("{year:04}-01-01"),
-                format!("{year:04}-12-31")
-            ],
+            params![account, format!("{year:04}-01-01"), format!("{year:04}-12-31")],
             |r| {
                 let date: String = r.get(0)?;
                 let journal: String = r.get(2)?;

@@ -103,16 +103,7 @@ impl Ledger {
                 c.iban.as_ref().map(|v| v.replace(' ', "").to_uppercase()), c.email, c.payment_term_days
             ],
         )?;
-        audit(
-            &tx,
-            &self.actor,
-            "save",
-            "company",
-            "1",
-            old.as_ref(),
-            Some(c),
-            None,
-        )?;
+        audit(&tx, &self.actor, "save", "company", "1", old.as_ref(), Some(c), None)?;
         tx.commit()?;
         Ok(())
     }

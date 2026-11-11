@@ -52,13 +52,9 @@ fn from_row(r: &Row) -> rusqlite::Result<Contact> {
 }
 
 pub(crate) fn contact_by_id(conn: &rusqlite::Connection, id: &str) -> Result<Contact> {
-    conn.query_row(
-        &format!("SELECT {COLS} FROM contact WHERE id = ?1"),
-        [id],
-        from_row,
-    )
-    .optional()?
-    .ok_or_else(|| DbError::NotFound(format!("contact {id}")))
+    conn.query_row(&format!("SELECT {COLS} FROM contact WHERE id = ?1"), [id], from_row)
+        .optional()?
+        .ok_or_else(|| DbError::NotFound(format!("contact {id}")))
 }
 
 impl Ledger {
@@ -96,23 +92,30 @@ impl Ledger {
                  default_account=excluded.default_account, default_tax_code=excluded.default_tax_code,
                  archived=excluded.archived, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')",
             params![
-                id, c.name.trim(), c.contact_person, c.email, c.address, c.postal_code, c.city,
-                if c.country.trim().is_empty() { "NL".to_string() } else { c.country.trim().to_uppercase() },
-                c.vat_number.as_ref().map(|v| v.replace(' ', "").to_uppercase()), c.kvk_number,
-                c.is_customer, c.is_supplier, c.is_platform, c.default_account, c.default_tax_code, c.archived
+                id,
+                c.name.trim(),
+                c.contact_person,
+                c.email,
+                c.address,
+                c.postal_code,
+                c.city,
+                if c.country.trim().is_empty() {
+                    "NL".to_string()
+                } else {
+                    c.country.trim().to_uppercase()
+                },
+                c.vat_number.as_ref().map(|v| v.replace(' ', "").to_uppercase()),
+                c.kvk_number,
+                c.is_customer,
+                c.is_supplier,
+                c.is_platform,
+                c.default_account,
+                c.default_tax_code,
+                c.archived
             ],
         )?;
         let new = contact_by_id(&tx, &id)?;
-        crate::audit(
-            &tx,
-            &self.actor,
-            "save",
-            "contact",
-            &id,
-            old.as_ref(),
-            Some(&new),
-            None,
-        )?;
+        crate::audit(&tx, &self.actor, "save", "contact", &id, old.as_ref(), Some(&new), None)?;
         tx.commit()?;
         Ok(id)
     }

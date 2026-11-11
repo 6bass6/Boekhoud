@@ -242,6 +242,21 @@ export interface DocumentInfo {
   retention_until: string;
 }
 
+export interface PlatformReport {
+  id: string;
+  platform: "apple" | "google";
+  period_start: string;
+  period_end: string;
+  original_filename: string;
+  document_id: string | null;
+  currencies: { currency: string; units: number; amount_cents: number }[];
+  breakdown: { rows?: number; types?: { transaction_type: string; rows: number; amount_cents: number }[] };
+  proceeds_eur_cents: number | null;
+  entry_id: string | null;
+  imported_at: string;
+  overlapping: string[];
+}
+
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   accounts: () => invoke<Account[]>("accounts"),
@@ -286,6 +301,12 @@ export const api = {
     invoke<DocumentInfo>("upload_document", { filename, dataBase64, documentType }),
   documentContent: (id: string) => invoke<{ info: DocumentInfo; data_base64: string }>("document_content", { id }),
   openDocument: (id: string) => invoke<void>("open_document", { id }),
+
+  importPlatformFile: (filename: string, dataBase64: string) => invoke<PlatformReport>("import_platform_file", { filename, dataBase64 }),
+  platformReports: () => invoke<PlatformReport[]>("platform_reports"),
+  bookPlatformReport: (id: string, amounts: { currency: string; eur: string }[]) => invoke<string>("book_platform_report", { id, amounts }),
+  deletePlatformReport: (id: string) => invoke<void>("delete_platform_report", { id }),
+  platformRevenueByProduct: (year: number) => invoke<[string, string, string, number, number][]>("platform_revenue_by_product", { year }),
 };
 
 /** Read a File picked in an <input type="file"> as base64 (without data: prefix). */

@@ -89,9 +89,18 @@ fn summary(conn: &Connection, id: &str) -> Result<PurchaseInvoiceSummary> {
             [id],
             |r| {
                 Ok((
-                    r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, Option<String>>(3)?,
-                    r.get::<_, String>(4)?, r.get::<_, Option<String>>(5)?, r.get::<_, String>(6)?, r.get::<_, i64>(7)?,
-                    r.get::<_, bool>(8)?, r.get::<_, bool>(9)?, r.get::<_, String>(10)?, r.get::<_, bool>(11)?,
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, String>(6)?,
+                    r.get::<_, i64>(7)?,
+                    r.get::<_, bool>(8)?,
+                    r.get::<_, bool>(9)?,
+                    r.get::<_, String>(10)?,
+                    r.get::<_, bool>(11)?,
                 ))
             },
         )
@@ -139,17 +148,12 @@ fn summary(conn: &Connection, id: &str) -> Result<PurchaseInvoiceSummary> {
 
 impl Ledger {
     /// Register and post a purchase invoice (INK journal).
-    pub fn register_purchase_invoice(
-        &mut self,
-        input: &PurchaseInput,
-    ) -> Result<PurchaseInvoiceSummary> {
+    pub fn register_purchase_invoice(&mut self, input: &PurchaseInput) -> Result<PurchaseInvoiceSummary> {
         if input.description.trim().is_empty() {
             return Err(DbError::Invalid("omschrijving ontbreekt".into()));
         }
         let actor = self.actor.clone();
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let contact = contact_by_id(&tx, &input.contact_id)?;
         let reference = input
             .supplier_reference
@@ -182,15 +186,14 @@ impl Ledger {
             }
         }
         let rules = vat_rules_on(&tx, input.invoice_date)?;
-        let (net, vat, total) =
-            purchase_totals(&input.lines, &rules).map_err(|e| DbError::Invalid(e.to_string()))?;
+        let (net, vat, total) = purchase_totals(&input.lines, &rules).map_err(|e| DbError::Invalid(e.to_string()))?;
         let credit_account = if input.paid_privately {
             PRIVATE_CONTRIBUTION_ACCOUNT
         } else {
             PAYABLE_ACCOUNT
         };
-        let lines = purchase_entry_lines(&input.lines, &rules, credit_account)
-            .map_err(|e| DbError::Invalid(e.to_string()))?;
+        let lines =
+            purchase_entry_lines(&input.lines, &rules, credit_account).map_err(|e| DbError::Invalid(e.to_string()))?;
         let id = uuid::Uuid::now_v7().to_string();
         let draft = EntryDraft {
             journal: JournalCode::INK,
@@ -209,8 +212,18 @@ impl Ledger {
                  subtotal_cents, vat_cents, total_cents, paid_privately, entry_id, document_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
-                id, input.contact_id, reference, iso(input.invoice_date), input.due_date.map(iso), input.description.trim(),
-                net, vat, total, input.paid_privately, posted.id, input.document_id
+                id,
+                input.contact_id,
+                reference,
+                iso(input.invoice_date),
+                input.due_date.map(iso),
+                input.description.trim(),
+                net,
+                vat,
+                total,
+                input.paid_privately,
+                posted.id,
+                input.document_id
             ],
         )?;
         for (i, l) in input.lines.iter().enumerate() {
@@ -299,14 +312,10 @@ impl Ledger {
         method: &str,
     ) -> Result<String> {
         let actor = self.actor.clone();
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let s = summary(&tx, invoice_id)?;
         if s.state != "open" {
-            return Err(DbError::Invalid(
-                "deze inkoopfactuur staat niet open".into(),
-            ));
+            return Err(DbError::Invalid("deze inkoopfactuur staat niet open".into()));
         }
         let desc = format!(
             "Betaling {} {}",
