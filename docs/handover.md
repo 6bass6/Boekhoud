@@ -122,7 +122,7 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
 8. **No asset disposal**, no link from asset to its purchase invoice in the UI.
 9. **No code signing, auto-updater, scheduled/encrypted backups or SQLCipher** yet (phase 7).
 10. **`crates/boekhoud-db/src/tests.rs` is large** (~1,300 lines); splitting per module would help.
-11. **UI has no React error boundary**; a render error blanks the window.
+11. ~~UI has no React error boundary~~ — done: `components/ErrorBoundary.tsx` wraps each screen; a render error shows a Dutch message with "Probeer opnieuw" and the navigation keeps working.
 12. **UI was only checked on Linux** (WebKitGTK under Xvfb). Real Windows/WebView2 testing by the owner
     is still needed (PDF iframe preview, file pickers, opening documents with `explorer`).
 
@@ -144,7 +144,7 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
    automated restore test; configurable data folder.
 7. **Phase 5 automation**: UBL/Peppol invoice import, local OCR via `Windows.Media.Ocr`, recurring-expense
    detection, missing-receipt reminders. All of it produces proposals only.
-8. **Phase 7 hardening**: code signing, Tauri updater, SQLCipher evaluation, error boundary, splitting tests.
+8. **Phase 7 hardening**: code signing, Tauri updater, SQLCipher evaluation, splitting tests.
 
 ## 6. Owner's context worth knowing
 

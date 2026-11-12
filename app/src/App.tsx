@@ -12,6 +12,7 @@ import { Platforms } from "./views/Platforms";
 import { Purchases } from "./views/Purchases";
 import { SalesInvoices } from "./views/SalesInvoices";
 import { NewEntry } from "./views/NewEntry";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ChartOfAccounts, LedgerCardView, TrialBalance } from "./views/Reports";
 import { Periods, Settings } from "./views/Settings";
 
@@ -63,22 +64,25 @@ export function App() {
       </nav>
       <main>
         {info.error && <p className="error">{info.error}</p>}
-        {view === "overzicht" && <DashboardView year={year} go={(v) => setView(v as View)} />}
-        {view === "btw" && <Vat year={year} />}
-        {view === "uren" && <Hours year={year} />}
-        {view === "activa" && <Assets />}
-        {view === "verkoop" && <SalesInvoices year={year} />}
-        {view === "inkoop" && <Purchases year={year} />}
-        {view === "platformen" && <Platforms year={year} />}
-        {view === "bank" && <Bank year={year} />}
-        {view === "contacten" && <Contacts />}
-        {view === "boekingen" && <Entries year={year} />}
-        {view === "nieuw" && <NewEntry onPosted={() => undefined} />}
-        {view === "proefbalans" && <TrialBalance year={year} onOpenAccount={openAccount} />}
-        {view === "grootboek" && <LedgerCardView year={year} account={account} onAccount={setAccount} />}
-        {view === "perioden" && <Periods year={year} />}
-        {view === "rekeningschema" && <ChartOfAccounts />}
-        {view === "instellingen" && <Settings />}
+        {/* key resets the boundary when switching screens */}
+        <ErrorBoundary key={view}>
+          {view === "overzicht" && <DashboardView year={year} go={(v) => setView(v as View)} />}
+          {view === "btw" && <Vat year={year} />}
+          {view === "uren" && <Hours year={year} />}
+          {view === "activa" && <Assets />}
+          {view === "verkoop" && <SalesInvoices year={year} />}
+          {view === "inkoop" && <Purchases year={year} />}
+          {view === "platformen" && <Platforms year={year} />}
+          {view === "bank" && <Bank year={year} />}
+          {view === "contacten" && <Contacts />}
+          {view === "boekingen" && <Entries year={year} />}
+          {view === "nieuw" && <NewEntry onPosted={() => undefined} />}
+          {view === "proefbalans" && <TrialBalance year={year} onOpenAccount={openAccount} />}
+          {view === "grootboek" && <LedgerCardView year={year} account={account} onAccount={setAccount} />}
+          {view === "perioden" && <Periods year={year} />}
+          {view === "rekeningschema" && <ChartOfAccounts />}
+          {view === "instellingen" && <Settings />}
+        </ErrorBoundary>
       </main>
     </div>
   );
