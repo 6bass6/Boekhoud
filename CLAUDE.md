@@ -108,7 +108,8 @@ update `docs/accounting-rules.md` §4; add a test that the old code still valida
 - The owner is not a bookkeeper; explain fiscal consequences in plain Dutch or English, briefly.
 - Ask before: changing booking rules, anything irreversible on real data, adding cloud services or
   dependencies that send data off the PC, or committing to a fiscal interpretation.
-- Work in small, reviewable commits; one bounded task at a time. Push to `main` only when the owner
-  agrees, otherwise use a branch and a pull request. CI must be green.
+- Work in small, reviewable commits; one bounded task at a time. The owner is the only developer:
+  no pull requests — commit, push and merge to `main` directly once the definition of done passes,
+  then check that CI on `main` is green.
 - When the owner shares real files (bank exports, platform reports) to fix an importer: keep them out of
   the repository and out of commits, derive a minimal anonymised fixture, and delete temporary copies.
