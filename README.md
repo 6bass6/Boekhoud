@@ -6,6 +6,7 @@ Eigen boekhoudsoftware voor een Nederlandse eenmanszaak — een Windows-desktopa
 - Architectuur: [`docs/architecture.md`](docs/architecture.md)
 - Boekingsregels en rekeningschema (ter beoordeling door boekhouder): [`docs/accounting-rules.md`](docs/accounting-rules.md)
 - Fasering: [`docs/roadmap.md`](docs/roadmap.md)
+- Stand van zaken en overdracht: [`docs/handover.md`](docs/handover.md); werkafspraken voor Claude Code: [`CLAUDE.md`](CLAUDE.md)
 
 ## Ontwikkelen
 
@@ -27,6 +28,8 @@ cargo run -p boekhoud-db --example demo_data -- pad/naar/boekhoud.sqlite
 
 De app bewaart zijn database in `%APPDATA%\nl.boekhoud.app\boekhoud.sqlite`, met back-ups in de
 submap `backups` (automatisch vóór iedere database-update, en handmatig via Instellingen).
+Ontwikkelversies (`pnpm tauri dev`) gebruiken de submap `dev`, zodat je echte administratie nooit
+wordt geraakt; `BOEKHOUD_DATA_DIR` overschrijft de map.
 
 CI bouwt bij iedere push een Windows-installer als artifact.
 

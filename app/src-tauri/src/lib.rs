@@ -258,6 +258,26 @@ fn backup_now(state: State<AppState>) -> CmdResult<String> {
     Ok(dest.display().to_string())
 }
 
+/// Where the database and documents live.
+/// - `BOEKHOUD_DATA_DIR` overrides everything (useful for demo data and tests).
+/// - Debug builds (`pnpm tauri dev`) use a `dev` subfolder so development never touches real data.
+/// - Release builds use the platform app-data folder (`%APPDATA%\nl.boekhoud.app` on Windows).
+fn resolve_data_dir(app_data: PathBuf) -> PathBuf {
+    data_dir_from(
+        std::env::var_os("BOEKHOUD_DATA_DIR").map(PathBuf::from),
+        app_data,
+        cfg!(debug_assertions),
+    )
+}
+
+fn data_dir_from(env_override: Option<PathBuf>, app_data: PathBuf, debug: bool) -> PathBuf {
+    match env_override.filter(|p| !p.as_os_str().is_empty()) {
+        Some(p) => p,
+        None if debug => app_data.join("dev"),
+        None => app_data,
+    }
+}
+
 /// Open the database, making a timestamped backup first if migrations are pending.
 fn open_ledger(data_dir: &Path) -> Result<Ledger, Box<dyn std::error::Error>> {
     std::fs::create_dir_all(data_dir)?;
@@ -275,7 +295,7 @@ fn open_ledger(data_dir: &Path) -> Result<Ledger, Box<dyn std::error::Error>> {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let data_dir = app.path().app_data_dir()?;
+            let data_dir = resolve_data_dir(app.path().app_data_dir()?);
             let ledger = open_ledger(&data_dir)?;
             app.manage(AppState {
                 ledger: Mutex::new(ledger),
@@ -400,6 +420,18 @@ mod tests {
         assert!(build_draft(input(vec![line("4900", "abc", "")])).is_err());
         assert!(build_draft(input(vec![line("4900", "-5", "")])).is_err());
         assert!(build_draft(input(vec![line("4900", "", "-5")])).is_err());
+    }
+
+    #[test]
+    fn development_builds_never_use_the_real_data_folder() {
+        let app = PathBuf::from("/appdata");
+        assert_eq!(data_dir_from(None, app.clone(), true), PathBuf::from("/appdata/dev"));
+        assert_eq!(data_dir_from(None, app.clone(), false), app);
+        assert_eq!(
+            data_dir_from(Some("/demo".into()), app.clone(), true),
+            PathBuf::from("/demo")
+        );
+        assert_eq!(data_dir_from(Some("".into()), app.clone(), false), app);
     }
 
     #[test]
