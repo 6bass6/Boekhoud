@@ -31,7 +31,7 @@ configurable tax rules, security by design.
 
 ## 2. Current state (all on `main`, CI green)
 
-Roadmap phases 0–3 are complete; phase 4 is partly done. **90 automated tests** (core, db, import, pdf, app).
+Roadmap phases 0–3 are complete; phase 4 is partly done. **103 automated tests** (core, db, import, pdf, app).
 CI (`.github/workflows/ci.yml`) runs fmt/clippy/tests for the core crates on Linux, and clippy + the
 full test suite + the NSIS/MSI installer build on Windows. The installer is uploaded as the
 `boekhoud-windows` artifact on every push to `main`.
@@ -67,6 +67,9 @@ full test suite + the NSIS/MSI installer build on Windows. The installer is uplo
   VAT returns and the audit log are immutable; documents cannot be deleted within 7-year retention and
   are checksum-verified on read.
 - Automatic database copy before every schema migration.
+- Automatic backup at app start when the last good one is older than 24 h (database + documents mirror,
+  verified with integrity check, hash chain and document checksums; 14 kept; optional extra folder).
+  Export/import package for moving to another PC; import only into an empty administration.
 
 ## 3. Code map
 
@@ -92,6 +95,7 @@ crates/boekhoud-db       SQLite storage; Ledger is the single entry point
   income_tax.rs          Loads tax_parameter rows (fallback to latest year) + IB-prognose
   hours.rs assets.rs queries.rs (entries, ledger cards, periods, dashboard)
   reports.rs             Per-year P&L, balance sheet with computed result lines, Dutch CSV
+  backup.rs              Backups (verify, retention, settings file), export/import package; backup_tests.rs
   tests.rs               Integration tests per phase (fictional data)
   examples/demo_data.rs  Fictional demo database covering all modules
 
@@ -99,7 +103,7 @@ crates/boekhoud-import   Pure parsers: apple.rs, google.rs, bank.rs (CAMT.053 + 
 crates/boekhoud-pdf      Invoice PDF with standard Helvetica (WinAnsi), wrapping, pagination
 
 app/src-tauri/src        Thin Tauri layer: lib.rs (state, core commands, data dir), invoicing.rs,
-                         platforms.rs, bank.rs, tax.rs, income_tax.rs, format.rs (Dutch formatting), messages.rs (Dutch errors)
+                         platforms.rs, bank.rs, tax.rs, income_tax.rs, backup.rs, format.rs (Dutch formatting), messages.rs (Dutch errors)
 app/src                  React UI: App.tsx (navigation), api.ts (typed invoke wrappers), money.ts,
                          hooks.ts (useLoad), views/*.tsx, components/DocumentViewer.tsx, styles.css
 ```
@@ -129,7 +133,9 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
    history append-only.
 7. **Exchange rates** can be stored and used, but there is no ECB import screen.
 8. **No asset disposal**, no link from asset to its purchase invoice in the UI.
-9. **No code signing, auto-updater, scheduled/encrypted backups or SQLCipher** yet (phase 7).
+9. **No code signing, auto-updater, backup encryption or SQLCipher** yet (phase 7). Automatic verified
+   backups, an extra backup folder and export/import for a new PC exist (`boekhoud-db/src/backup.rs`,
+   `docs/backup.md`); backups are unencrypted and the data folder is not configurable.
 10. **`crates/boekhoud-db/src/tests.rs` is large** (~1,300 lines); splitting per module would help.
 11. ~~UI has no React error boundary~~ — done: `components/ErrorBoundary.tsx` wraps each screen; a render error shows a Dutch message with "Probeer opnieuw" and the navigation keeps working.
 12. **UI was only checked on Linux** (WebKitGTK under Xvfb). Real Windows/WebView2 testing by the owner
@@ -145,8 +151,8 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
    to `exports/` in the data folder because the app has no dialog plugin).
 4. **XAF export** (XML Auditfile Financieel 3.2) for accountants and the Belastingdienst.
 5. **Validate importers with real exports** once the owner has them (see limitation 1).
-6. **Backups**: scheduled daily backup of database + documents to a chosen folder, optional encryption,
-   automated restore test; configurable data folder.
+6. **Backups** — done except: optional encryption of backups/exports and a configurable data folder.
+   Restore stays manual by design (steps in `docs/backup.md`).
 7. **Phase 5 automation**: UBL/Peppol invoice import, local OCR via `Windows.Media.Ocr`, recurring-expense
    detection, missing-receipt reminders. All of it produces proposals only.
 8. **Phase 7 hardening**: code signing, Tauri updater, SQLCipher evaluation, splitting tests.

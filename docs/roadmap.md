@@ -41,5 +41,9 @@ in parallel with a spreadsheet for at least one VAT period.
   (semicolon, comma decimal, UTF-8 with BOM) of both and of the trial balance, written to the data
   folder's `exports/`. **Not yet:** year-end closing/opening balance, cost per category, revenue per
   app, XLSX/PDF export, a save dialog.
+- **Phase 7** also: automatic daily backup at app start (database + incremental documents
+  mirror), verified after writing (integrity check, hash chain, document checksums), retention of 14
+  automatic backups, optional extra folder (USB/OneDrive), restore test, export/import package for
+  moving to another PC (see `docs/backup.md`). **Not yet:** backup encryption, configurable data folder.
 - **Next:** year-end closing, then phase 5 (UBL import, local OCR, recurring-expense detection) and
-  phase 7 items (XAF export, scheduled encrypted backups, code signing).
+  phase 7 items (XAF export, backup encryption, code signing).
