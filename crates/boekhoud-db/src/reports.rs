@@ -156,6 +156,15 @@ pub fn csv_amount(cents: i64) -> String {
     format!("{sign}{},{:02}", abs / 100, abs % 100)
 }
 
+/// Account number as Excel text: "0100" would otherwise be read as the number 100.
+fn csv_account(a: &str) -> String {
+    if a.starts_with('0') {
+        format!("=\"{a}\"")
+    } else {
+        a.to_string()
+    }
+}
+
 fn csv_field(s: &str) -> String {
     if s.contains([';', '"', '\n', '\r']) {
         format!("\"{}\"", s.replace('"', "\"\""))
@@ -185,7 +194,11 @@ fn row(cells: &[&str]) -> Vec<String> {
 fn section_rows(rows: &mut Vec<Vec<String>>, title: &str, lines: &[ReportLine], total_label: &str, sum: i64) {
     rows.push(row(&[title]));
     for l in lines {
-        rows.push(vec![l.account.clone(), l.name.clone(), csv_amount(l.amount_cents)]);
+        rows.push(vec![
+            csv_account(&l.account),
+            l.name.clone(),
+            csv_amount(l.amount_cents),
+        ]);
     }
     rows.push(vec![String::new(), total_label.into(), csv_amount(sum)]);
     rows.push(vec![]);
@@ -260,7 +273,7 @@ pub fn trial_balance_csv(until: NaiveDate, tb: &[TrialBalanceRow]) -> String {
     ];
     for r in tb {
         rows.push(vec![
-            r.account.clone(),
+            csv_account(&r.account),
             r.name.clone(),
             csv_amount(r.debit_cents),
             csv_amount(r.credit_cents),
@@ -429,6 +442,9 @@ mod tests {
         assert_eq!(csv_amount(123_456), "1234,56");
         assert_eq!(csv_amount(-5), "-0,05");
         assert_eq!(csv_field("a;b \"c\""), "\"a;b \"\"c\"\"\"");
+        // Leading zero kept as Excel text; the quote inside makes csv_field quote the whole formula.
+        assert_eq!(csv_field(&csv_account("0100")), "\"=\"\"0100\"\"\"");
+        assert_eq!(csv_account("8000"), "8000");
         let l = two_years();
         let text = profit_and_loss_csv(&l.profit_and_loss(d(2026, 12, 31)).unwrap());
         assert!(text.starts_with("\u{feff}Winst-en-verliesrekening;01-01-2026 t/m 31-12-2026\r\n"));
