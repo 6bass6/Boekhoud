@@ -31,7 +31,7 @@ configurable tax rules, security by design.
 
 ## 2. Current state (all on `main`, CI green)
 
-Roadmap phases 0–3 are complete; phase 4 is partly done. **83 automated tests** (core, db, import, pdf, app).
+Roadmap phases 0–3 are complete; phase 4 is partly done. **90 automated tests** (core, db, import, pdf, app).
 CI (`.github/workflows/ci.yml`) runs fmt/clippy/tests for the core crates on Linux, and clippy + the
 full test suite + the NSIS/MSI installer build on Windows. The installer is uploaded as the
 `boekhoud-windows` artifact on every push to `main`.
@@ -48,6 +48,7 @@ full test suite + the NSIS/MSI installer build on Windows. The installer is uplo
 | **Contacten** | Customers, suppliers, platforms (roles, VAT id, default account/VAT code). |
 | **Boekingen / Nieuwe boeking** | Journal list with detail and reversal; manual entry form with live balance check. |
 | **Btw-aangifte** | Quarterly VAT return per rubriek with drill-down, warnings, rounding, ICP listing, linking Apple/Google contacts for ICP, filing (clears VAT accounts to 1520, closes months). |
+| **IB-prognose** | Income-tax estimate: year result → ondernemersaftrek → mkb-winstvrijstelling → box 1 → heffingskortingen → Zvw → still to pay and monthly reserve; salary/withheld loonheffing/starter entered on screen, not stored. |
 | **Uren** | Time entries and timer; urencriterium (1,225 h) progress and weekly pace. |
 | **Activa** | Asset register; monthly straight-line depreciation posting. |
 | **Winst & verlies / Balans** | Per-year P&L (1 January up to a chosen date) and balance sheet at a date, with prior-year and current-year results as computed equity lines; "Exporteren (CSV)" writes to `exports/` in the data folder and shows the path. |
@@ -72,6 +73,7 @@ full test suite + the NSIS/MSI installer build on Windows. The installer is uplo
 ```
 crates/boekhoud-core     Pure domain logic, no I/O
   money.rs               Money (i64 cents + Currency), parsing, basis-point VAT, exchange conversion
+  income_tax.rs          IB-prognose arithmetic (parameters passed in as data)
   journal.rs             EntryDraft/EntryLine (signed cents), validation, reversal, JournalCode
   invoice.rs             Sales/purchase invoice arithmetic and the entry lines they produce (VatRule)
   hash.rs                Canonical serialisation + hash chain
@@ -80,13 +82,14 @@ crates/boekhoud-core     Pure domain logic, no I/O
 crates/boekhoud-db       SQLite storage; Ledger is the single entry point
   lib.rs                 Ledger (open, migrations, post, reverse, periods, trial balance, verify_chain),
                          post_in_tx (THE posting function), audit() helper, DbError
-  migrations/000N_*.sql  Forward-only schema migrations (0001 core … 0007 tax/hours/assets)
+  migrations/000N_*.sql  Forward-only schema migrations (0001 core … 0008 tax parameters)
   tax.rs                 Tax codes, VAT regime, exchange rates, VatRule loading
   company.rs contacts.rs documents.rs
   sales.rs purchases.rs  Invoices, payments (record_payment), open amounts
   platforms.rs           Platform reports and booking
   bank.rs                Bank accounts, import, suggestions, processing, reconciliation
   vat.rs                 VAT return, detail, ICP, filing
+  income_tax.rs          Loads tax_parameter rows (fallback to latest year) + IB-prognose
   hours.rs assets.rs queries.rs (entries, ledger cards, periods, dashboard)
   reports.rs             Per-year P&L, balance sheet with computed result lines, Dutch CSV
   tests.rs               Integration tests per phase (fictional data)
@@ -96,7 +99,7 @@ crates/boekhoud-import   Pure parsers: apple.rs, google.rs, bank.rs (CAMT.053 + 
 crates/boekhoud-pdf      Invoice PDF with standard Helvetica (WinAnsi), wrapping, pagination
 
 app/src-tauri/src        Thin Tauri layer: lib.rs (state, core commands, data dir), invoicing.rs,
-                         platforms.rs, bank.rs, tax.rs, format.rs (Dutch formatting), messages.rs (Dutch errors)
+                         platforms.rs, bank.rs, tax.rs, income_tax.rs, format.rs (Dutch formatting), messages.rs (Dutch errors)
 app/src                  React UI: App.tsx (navigation), api.ts (typed invoke wrappers), money.ts,
                          hooks.ts (useLoad), views/*.tsx, components/DocumentViewer.tsx, styles.css
 ```
@@ -117,7 +120,8 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
    opening balance are still missing, and the trial balance remains cumulative.
 3. **All bank accounts post to ledger account 1100.** A second bank account (e.g. savings) needs its
    own ledger account (`bank_account.ledger_account` exists but is always set to 1100).
-4. **No income-tax estimate (IB-prognose).** Not started; needs yearly parameters as data with sources.
+4. ~~No income-tax estimate~~ — done: **Belastingen → IB-prognose** (accounting-rules §7). Only 2026 parameters are
+   stored; add 2027 via a new migration once final. Simplifications are marked [TOETSEN] there.
 5. **VAT details to confirm** (marked **[TOETSEN]** in accounting-rules): rubriek for services to non-EU
    businesses (`V0NEU` has no rubriek and shows a warning), net vs gross for platform revenue, KOR
    purchase codes (reverse charge under KOR), private use of assets (`business_use_pct` is stored, not used).
@@ -133,14 +137,8 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
 
 ## 5. Recommended next tasks (in order)
 
-1. **IB-prognose** (roadmap phase 4). Add a migration with a `tax_parameter` table (year, key, value as
-   integer cents/basis points, source URL, valid_from). Research the 2026 and 2027 values from
-   belastingdienst.nl: box 1 brackets and rates, zelfstandigenaftrek, startersaftrek, mkb-winstvrijstelling,
-   Zvw-bijdrage rate and maximum, algemene heffingskorting and arbeidskorting (including how they phase
-   out with income), and how the urencriterium affects eligibility. Inputs: fiscal profit from the ledger,
-   estimated salary income (loondienst), hours from `hours_summary`. Output: estimate plus a monthly reserve
-   advice. Show clearly: accounting profit ≠ fiscal profit ≠ taxable income ≠ final assessment. Tests with
-   fixed parameters.
+1. ~~IB-prognose~~ — done (see limitation 4). Remaining: 2027 parameters in a new migration when
+   belastingdienst.nl publishes the final figures.
 2. **Year-end closing** + opening balance, and a per-year trial balance / P&L / balance sheet.
 3. **Reports and exports** — partly done: per-year P&L and balance sheet with CSV export (also the trial
    balance). Still open: cost per category, revenue per app in EUR, XLSX/PDF, a save dialog (CSV now goes

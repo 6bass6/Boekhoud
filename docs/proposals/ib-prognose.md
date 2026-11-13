@@ -1,6 +1,7 @@
 # Proposal: IB-prognose (income-tax estimate)
 
-**Status: pending_approval** (proposed 2026-11-12; nothing implemented yet)
+**Status: approved — implemented** (proposed 2026-11-12, implemented 2026-11-13; the rules now live in
+`docs/accounting-rules.md` §7)
 
 Implements handover §5 task 1. This file records the parameters and the calculation order so the
 reasoning survives even if the design changes; it becomes `docs/accounting-rules.md` text once approved.

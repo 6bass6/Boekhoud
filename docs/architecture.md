@@ -41,8 +41,8 @@ boekhoud/
 └── .github/workflows/     # CI: tests on Linux, Windows .exe build
 ```
 
-Planned future crates (added when their phase starts, not before): `boekhoud-reports` (incl. XAF export),
-`boekhoud-tax` (IB-prognose). Inside `boekhoud-db` each domain has its own module (`sales`, `purchases`,
+Planned future crates (added when their phase starts, not before): `boekhoud-reports` (incl. XAF export).
+The IB-prognose arithmetic lives in `boekhoud-core::income_tax` (small enough; no separate crate). Inside `boekhoud-db` each domain has its own module (`sales`, `purchases`,
 `bank`, `platforms`, `vat`, `hours`, `assets`, `documents`); all postings go through `post_in_tx`.
 
 Dependency rule: `core` depends on nothing internal. Every other crate may depend on `core`.

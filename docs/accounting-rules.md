@@ -274,7 +274,67 @@ onder de KOR. **[TOETSEN: inkoop met verlegde btw onder de KOR heeft eigen codes
   Met een baan in loondienst geldt daarnaast dat je meer tijd aan de onderneming moet besteden dan
   aan de baan (lees de actuele voorwaarden bij de Belastingdienst). **[TOETSEN]**
 
-## 7. Open vragen voor de boekhouder
+## 7. IB-prognose (schatting inkomstenbelasting)
+
+Scherm **Belastingen → IB-prognose**. Een schatting voor een ondernemer **onder de AOW-leeftijd**:
+winst in de boekhouding ≠ fiscale winst ≠ belastbaar inkomen ≠ definitieve aanslag.
+
+**Parameters zijn data**: tabel `tax_parameter` (jaar, sleutel, waarde, bron-URL), migratie
+`0008_tax_parameters.sql`. Bedragen in centen, percentages in micro-eenheden (35,75% = 357500).
+Een nieuw jaar komt erbij via een nieuwe migratie. Voor een jaar zonder parameters rekent de applicatie
+met het laatste jaar dat wel parameters heeft en meldt dat op het scherm. **2027 is nog niet definitief**
+(Belastingplan 2027 ligt bij het parlement); 2027-rijen worden toegevoegd zodra belastingdienst.nl de
+definitieve cijfers publiceert.
+
+Parameters 2026 (definitief, gecontroleerd op belastingdienst.nl op 12-11-2026):
+
+| Parameter | Waarde | Bron |
+|---|---|---|
+| Schijf 1 box 1 | t/m € 38.883: 35,75% | [belastingberekening 2026](https://www.belastingdienst.nl/wps/wcm/connect/fisin/fisin2026/belastingberekening) |
+| Schijf 2 box 1 | t/m € 78.426: 37,56% | idem |
+| Schijf 3 box 1 | daarboven: 49,50% | idem |
+| Zelfstandigenaftrek | € 1.200 | [zelfstandigenaftrek 2026](https://www.belastingdienst.nl/wps/wcm/connect/bldcontentnl/belastingdienst/zakelijk/winst/inkomstenbelasting/veranderingen-inkomstenbelasting-2026/ondernemersaftrek-2026/zelfstandigenaftrek-2026) |
+| Startersaftrek | € 2.123 | idem |
+| Mkb-winstvrijstelling | 12,7% | [mkb-winstvrijstelling 2026](https://www.belastingdienst.nl/wps/wcm/connect/bldcontentnl/belastingdienst/zakelijk/winst/inkomstenbelasting/veranderingen-inkomstenbelasting-2026/mkb-winstvrijstelling-2026) |
+| Max. tarief ondernemersaftrek + mkb-vrijstelling | 37,56% | beide pagina's hierboven |
+| Algemene heffingskorting | € 3.115; − 6,398% van inkomen boven € 29.736; € 0 vanaf € 78.426 | [heffingskortingen 2026](https://www.belastingdienst.nl/wps/wcm/connect/fisin/fisin2026/heffingskortingen) |
+| Arbeidskorting | t/m € 11.965: 8,324%; t/m € 25.845: € 996 + 31,009% boven € 11.965; t/m € 45.592: € 5.300 + 1,950% boven € 25.845; t/m € 132.920: € 5.685 − 6,510% boven € 45.592; daarboven € 0 | idem |
+| Bijdrage Zvw ondernemer | 4,85% tot max. bijdrage-inkomen € 79.409 | [percentages Zvw](https://www.belastingdienst.nl/wps/wcm/connect/bldcontentnl/belastingdienst/prive/werk_en_inkomen/zorgverzekeringswet/veranderingen-bijdrage-zvw/percentages-zvw) |
+
+Rekenvolgorde (`boekhoud_core::income_tax`, elke vermenigvuldiging afgerond op centen, half van nul af):
+
+1. **Winst** = resultaat van het jaar uit de boekhouding (opbrengsten − kosten, zoals op het overzicht).
+   **[TOETSEN]** Geen fiscale correcties (zoals beperkt aftrekbare gemengde kosten): de winst in de
+   boekhouding geldt als fiscale winst.
+2. **Ondernemersaftrek** = zelfstandigenaftrek (als de uren ≥ 1.225 volgens de urenregistratie) +
+   startersaftrek (als de gebruiker "starter" aanvinkt). De zelfstandigenaftrek is beperkt tot de winst,
+   behalve als er startersaftrek is (dan kan er een verlies ontstaan). Geen doorschuiven van niet-benutte
+   aftrek. **[TOETSEN]** Startersaftrek alleen samen met het urencriterium (het is een verhoging van de
+   zelfstandigenaftrek; de uitzondering bij arbeidsongeschiktheid is niet ingebouwd).
+3. **Mkb-winstvrijstelling** = 12,7% × (winst − ondernemersaftrek); bij een verlies negatief
+   (de vrijstelling verkleint het verlies). Geen urencriterium nodig.
+4. **Box 1-inkomen** = belastbare winst + loon uit dienstbetrekking (eigen invoer); belasting per schijf.
+   Een negatief box 1-inkomen wordt als € 0 belast (geen verliesverrekening met andere jaren).
+5. **Aftrekbeperking**: het deel van (ondernemersaftrek + mkb-vrijstelling) dat in schijf 3 valt, wordt
+   teruggeteld tegen 49,50% − 37,56% = 11,94%. Dat deel = de aftrek, maar hooguit het bedrag waarmee het
+   inkomen vóór die aftrek boven de grens van schijf 3 uitkomt.
+6. **Heffingskortingen**: algemene heffingskorting over het box 1-inkomen en arbeidskorting over
+   loon + belastbare winst; samen hooguit de belasting. **[TOETSEN]** Vereenvoudiging: de kortingen worden
+   afgezet tegen de hele box 1-belasting (in werkelijkheid alleen tegen het deel dat niet-AOW-gerechtigden
+   betalen, en de algemene heffingskorting hangt af van het verzamelinkomen).
+7. **Bijdrage Zvw** = 4,85% × belastbare winst, hooguit over (€ 79.409 − loon), omdat over het loon al Zvw
+   via de werkgever wordt afgedragen.
+8. **Nog te betalen** = totaal − al ingehouden loonheffing (eigen invoer, van loonstrook/jaaropgaaf);
+   negatief = terug te ontvangen. **Reserve per maand** = nog te betalen ÷ resterende maanden van het jaar
+   inclusief de huidige maand (geen advies voor een afgelopen jaar).
+
+Loon, ingehouden loonheffing en "starter" worden op het scherm ingevuld en niet opgeslagen.
+
+Niet meegenomen (staat als opmerking op het scherm): box 2 en 3, partner en toeslagen, AOW-leeftijd,
+eigen woning, voorlopige aanslagen die al betaald worden, en de eis dat je met een baan meer dan de helft
+van je werktijd aan de onderneming besteedt (geldt niet voor starters in de eerste 5 jaar).
+
+## 8. Open vragen voor de boekhouder
 
 1. Netto (proceeds) of bruto (verkopen − commissie) verantwoorden voor Apple/Google? (S1)
 2. Bevestiging rubriek 3b + ICP voor Apple- en Google-opbrengsten; behandeling bij KOR.
@@ -284,3 +344,5 @@ onder de KOR. **[TOETSEN: inkoop met verlegde btw onder de KOR heeft eigen codes
 6. Afrondingsregel btw: per regel of per factuurtotaal.
 7. KOR of regulier voor het eerste jaar, gezien verwachte investeringen en type opdrachtgevers.
 8. Afschrijvingstermijnen en toepassing KIA.
+9. IB-prognose: winst in de boekhouding als fiscale winst, startersaftrek alleen met urencriterium en
+   de vereenvoudigde verrekening van heffingskortingen (§7).

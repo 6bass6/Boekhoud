@@ -2,7 +2,7 @@
 //!
 //! Pure integer arithmetic; the yearly parameters are data (table `tax_parameter`) and are passed in.
 //! Amounts are cents, rates micro-units (35,75% = 357_500). Every multiplication rounds half away
-//! from zero to whole cents. See `docs/accounting-rules.md` §IB-prognose for the calculation order.
+//! from zero to whole cents. See `docs/accounting-rules.md` §7 for the calculation order.
 
 use serde::Serialize;
 
