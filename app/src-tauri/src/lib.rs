@@ -2,6 +2,7 @@
 //! Keep this thin — business rules belong in `boekhoud-core` / `boekhoud-db`.
 //! Amounts arrive from the UI as text and are parsed here with `Money::parse`, never as floats.
 
+mod backup;
 mod bank;
 mod format;
 mod income_tax;
@@ -25,6 +26,8 @@ use tauri::{Manager, State};
 pub(crate) struct AppState {
     ledger: Mutex<Ledger>,
     pub(crate) data_dir: PathBuf,
+    /// Result of the last backup to the extra folder (shown in Instellingen).
+    pub(crate) backup_notice: Mutex<Option<String>>,
 }
 
 #[derive(Serialize)]
@@ -289,16 +292,6 @@ fn set_vat_regime(state: State<AppState>, valid_from: String, regime: String, no
     with_ledger(&state, |l| l.set_vat_regime(date, regime, note.trim()))
 }
 
-#[tauri::command]
-fn backup_now(state: State<AppState>) -> CmdResult<String> {
-    let dir = state.data_dir.join("backups");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Back-upmap aanmaken mislukt: {e}"))?;
-    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-    let dest = dir.join(format!("handmatig-{stamp}.sqlite"));
-    with_ledger(&state, |l| l.backup_to(&dest))?;
-    Ok(dest.display().to_string())
-}
-
 /// Where the database and documents live.
 /// - `BOEKHOUD_DATA_DIR` overrides everything (useful for demo data and tests).
 /// - Debug builds (`pnpm tauri dev`) use a `dev` subfolder so development never touches real data.
@@ -341,7 +334,9 @@ pub fn run() {
             app.manage(AppState {
                 ledger: Mutex::new(ledger),
                 data_dir,
+                backup_notice: Mutex::new(None),
             });
+            backup::start_auto_backup(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -365,7 +360,11 @@ pub fn run() {
             save_company,
             vat_regime,
             set_vat_regime,
-            backup_now,
+            backup::backup_status,
+            backup::backup_now,
+            backup::save_backup_settings,
+            backup::export_administration,
+            backup::import_administration,
             invoicing::contacts,
             invoicing::save_contact,
             invoicing::sales_invoices,

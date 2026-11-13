@@ -6,6 +6,7 @@ type Go = (view: string) => void;
 
 export function DashboardView({ year, go }: { year: number; go: Go }) {
   const d = useLoad(() => api.dashboard(year), [year]);
+  const backup = useLoad(() => api.backupStatus(), []);
   if (d.error) return <p className="error">{d.error}</p>;
   if (!d.data) return <p className="muted">Laden…</p>;
   const x = d.data;
@@ -17,6 +18,7 @@ export function DashboardView({ year, go }: { year: number; go: Go }) {
     [x.draft_invoices, p(x.draft_invoices, "conceptfactuur", "conceptfacturen"), "verkoop"],
     [x.receivables_overdue, p(x.receivables_overdue, "vervallen verkoopfactuur", "vervallen verkoopfacturen"), "verkoop"],
     [x.unbooked_platform_reports, p(x.unbooked_platform_reports, "platformrapport te boeken", "platformrapporten te boeken"), "platformen"],
+    [backup.data && (backup.data.days_since_good ?? 99) >= 7 ? 1 : 0, "back-up nodig: de laatste goede back-up is ouder dan 7 dagen of ontbreekt", "instellingen"],
   ];
   const criterion = 1225 * 60;
   return (

@@ -147,6 +147,23 @@ export interface AppInfo {
   data_dir: string;
 }
 
+export interface Verification { ok: boolean; entries: number; documents: number; problems: string[] }
+export interface BackupInfo {
+  file: string;
+  kind: "auto" | "handmatig" | "voor-migratie" | "voor-import" | "overig";
+  created: string | null;
+  size_bytes: number;
+  verification: Verification | null;
+}
+export interface BackupStatus {
+  backups: BackupInfo[];
+  last_good: BackupInfo | null;
+  days_since_good: number | null;
+  backup_dir: string;
+  extra_dir: string | null;
+  notice: string | null;
+}
+
 export const journals: { code: string; name: string }[] = [
   { code: "MEM", name: "Memoriaal" },
   { code: "BNK", name: "Bank" },
@@ -399,7 +416,11 @@ export const api = {
   vatRegime: (date: string) => invoke<VatRegime>("vat_regime", { date }),
   setVatRegime: (validFrom: string, regime: VatRegime, note: string) =>
     invoke<void>("set_vat_regime", { validFrom, regime, note }),
-  backupNow: () => invoke<string>("backup_now"),
+  backupStatus: () => invoke<BackupStatus>("backup_status"),
+  backupNow: () => invoke<BackupStatus>("backup_now"),
+  saveBackupSettings: (extraDir: string) => invoke<BackupStatus>("save_backup_settings", { extraDir }),
+  exportAdministration: (dest: string) => invoke<string>("export_administration", { dest }),
+  importAdministration: (path: string) => invoke<string>("import_administration", { path }),
 
   contacts: (includeArchived = false) => invoke<Contact[]>("contacts", { includeArchived }),
   saveContact: (contact: Contact) => invoke<string>("save_contact", { contact }),
