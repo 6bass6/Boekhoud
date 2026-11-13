@@ -2,7 +2,7 @@
 
 use rusqlite::{params, Connection};
 
-use crate::Result;
+use crate::{DbError, Result};
 
 /// `(version, sql)` in ascending order. Never edit or remove a released entry.
 pub const MIGRATIONS: &[(u32, &str)] = &[
@@ -34,9 +34,23 @@ fn applied(conn: &Connection) -> Result<Vec<u32>> {
     Ok(v)
 }
 
+/// Refuse a database written by a newer app version (e.g. after reinstalling an older version):
+/// running this version's code against an unknown schema could damage it.
+fn refuse_newer(done: &[u32]) -> Result<()> {
+    let known = MIGRATIONS.last().map_or(0, |m| m.0);
+    match done.iter().max() {
+        Some(&v) if v > known => Err(DbError::Invalid(format!(
+            "deze administratie is gemaakt met een nieuwere versie van Boekhoud (databaseversie {v}, \
+             deze versie kent t/m {known}); installeer de nieuwste versie, de gegevens zijn niet aangepast"
+        ))),
+        _ => Ok(()),
+    }
+}
+
 pub fn pending(conn: &Connection) -> Result<Vec<u32>> {
     ensure_table(conn)?;
     let done = applied(conn)?;
+    refuse_newer(&done)?;
     Ok(MIGRATIONS
         .iter()
         .map(|(v, _)| *v)
@@ -47,6 +61,7 @@ pub fn pending(conn: &Connection) -> Result<Vec<u32>> {
 pub fn apply(conn: &Connection) -> Result<()> {
     ensure_table(conn)?;
     let done = applied(conn)?;
+    refuse_newer(&done)?;
     for (version, sql) in MIGRATIONS {
         if done.contains(version) {
             continue;

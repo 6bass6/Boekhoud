@@ -215,6 +215,31 @@ fn backup_produces_openable_copy() {
 }
 
 #[test]
+fn database_from_newer_app_version_is_refused() {
+    let dir = std::env::temp_dir().join(format!("boekhoud-test-{}", uuid::Uuid::now_v7()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("main.sqlite");
+    {
+        let l = Ledger::open(&path).unwrap();
+        l.conn
+            .execute("INSERT INTO schema_migrations (version) VALUES (9999)", [])
+            .unwrap();
+    }
+    let before = std::fs::read(&path).unwrap();
+    match Ledger::open(&path) {
+        Err(DbError::Invalid(m)) => assert!(m.contains("nieuwere versie"), "{m}"),
+        other => panic!("expected refusal, got {:?}", other.map(|_| ())),
+    }
+    assert!(matches!(Ledger::pending_migrations(&path), Err(DbError::Invalid(_))));
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        before,
+        "refused database must stay untouched"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn unknown_tax_code_is_rejected() {
     let mut l = Ledger::open_in_memory().unwrap();
     match l.post(&talk_with_code(d(2026, 11, 1), "X99")) {
