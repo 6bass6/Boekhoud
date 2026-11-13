@@ -28,7 +28,7 @@ pub struct DocumentInfo {
     pub retention_until: String,
 }
 
-fn blob_path(root: &Path, sha: &str) -> PathBuf {
+pub(crate) fn blob_path(root: &Path, sha: &str) -> PathBuf {
     root.join(&sha[0..2]).join(&sha[2..4]).join(sha)
 }
 

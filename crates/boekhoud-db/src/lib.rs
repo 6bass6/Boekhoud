@@ -4,6 +4,7 @@
 //! [`Ledger::post`] is the only way to create posted journal entries.
 
 mod assets;
+pub mod backup;
 mod bank;
 mod company;
 mod contacts;
@@ -30,6 +31,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 pub use assets::{depreciation_for_month, AssetInput, AssetView};
+pub use backup::{BackupInfo, BackupSettings, Manifest, Verification};
 pub use bank::{
     split_gross, BankAccount, BankAction, BankImportInput, BankImportResult, BankTransactionView, NewBankTransaction,
     Reconciliation, Suggestion,
@@ -631,5 +633,7 @@ pub(crate) fn post_in_tx(
     Ok(posted)
 }
 
+#[cfg(test)]
+mod backup_tests;
 #[cfg(test)]
 mod tests;
