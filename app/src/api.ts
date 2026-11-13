@@ -355,6 +355,22 @@ export interface VatDetailLine { entry_id: string; entry_number: string; date: s
 export interface IcpLine { vat_number: string | null; name: string; country: string | null; services_cents: number }
 export interface TimeEntry { id: string; entry_date: string; started_at: string | null; minutes: number | null; activity: string; project: string | null; description: string | null }
 export interface HoursSummary { year: number; total_minutes: number; by_month: number[]; by_activity: [string, number][]; criterion_hours: number; needed_per_week_minutes: number }
+export interface IncomeTaxBracket { upto_cents: number | null; rate_micro: number; income_cents: number; tax_cents: number }
+export interface IncomeTaxEstimate {
+  profit_cents: number; zelfstandigenaftrek_cents: number; startersaftrek_cents: number; ondernemersaftrek_cents: number;
+  mkb_vrijstelling_cents: number; taxable_profit_cents: number; salary_cents: number; box1_income_cents: number;
+  brackets: IncomeTaxBracket[]; bracket_tax_cents: number; rate_cap_base_cents: number; rate_cap_cents: number; tax_cents: number;
+  algemene_heffingskorting_cents: number; arbeidskorting_cents: number; credits_applied_cents: number; tax_after_credits_cents: number;
+  zvw_base_cents: number; zvw_cents: number; total_cents: number; withheld_cents: number; to_pay_cents: number; monthly_reserve_cents: number | null;
+}
+export interface IncomeTaxParams {
+  zelfstandigenaftrek_cents: number; startersaftrek_cents: number; mkb_rate_micro: number; deduction_rate_cap_micro: number;
+  zvw_rate_micro: number; zvw_max_income_cents: number;
+}
+export interface IncomeTaxView {
+  year: number; parameter_year: number; hours_minutes: number; criterion_hours: number; remaining_months: number;
+  params: IncomeTaxParams; estimate: IncomeTaxEstimate; sources: string[];
+}
 export interface AssetView {
   id: string; name: string; acquisition_date: string; cost_cents: number; residual_cents: number; months: number;
   start_month: string; business_use_pct: number; monthly_cents: number; depreciated_cents: number; book_value_cents: number; months_posted: number; notes: string | null;
@@ -437,6 +453,8 @@ export const api = {
   stopTimer: () => invoke<TimeEntry>("stop_timer"),
   runningTimer: () => invoke<TimeEntry | null>("running_timer"),
   hoursSummary: (year: number) => invoke<HoursSummary>("hours_summary", { year }),
+  incomeTaxEstimate: (year: number, salary: string, withheld: string, starter: boolean) =>
+    invoke<IncomeTaxView>("income_tax_estimate", { year, salary, withheld, starter }),
   addAsset: (asset: { name: string; acquisition_date: string; cost: string; residual: string; years: string; business_use_pct: number; notes: string | null }) =>
     invoke<string>("add_asset", { asset }),
   assets: () => invoke<AssetView[]>("assets"),

@@ -4,6 +4,7 @@
 
 mod bank;
 mod format;
+mod income_tax;
 mod invoicing;
 mod messages;
 mod platforms;
@@ -398,6 +399,7 @@ pub fn run() {
             bank::reopen_bank_transaction,
             bank::bank_reconciliation,
             tax::dashboard,
+            income_tax::income_tax_estimate,
             tax::vat_return,
             tax::vat_return_detail,
             tax::icp_listing,

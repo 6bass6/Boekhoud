@@ -5,6 +5,7 @@ import { Assets } from "./views/Assets";
 import { Bank } from "./views/Bank";
 import { DashboardView } from "./views/Dashboard";
 import { Hours } from "./views/Hours";
+import { IncomeTax } from "./views/IncomeTax";
 import { Vat } from "./views/Vat";
 import { Contacts } from "./views/Contacts";
 import { Entries } from "./views/Entries";
@@ -16,7 +17,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BalanceSheetView, ChartOfAccounts, LedgerCardView, ProfitAndLossView, TrialBalance } from "./views/Reports";
 import { Periods, Settings } from "./views/Settings";
 
-type View = "overzicht" | "btw" | "uren" | "activa" | "verkoop" | "inkoop" | "platformen" | "bank" | "contacten" | "boekingen" | "nieuw" | "winstverlies" | "balans" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
+type View = "overzicht" | "btw" | "ib" | "uren" | "activa" | "verkoop" | "inkoop" | "platformen" | "bank" | "contacten" | "boekingen" | "nieuw" | "winstverlies" | "balans" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
 
 const nav: { view: View; label: string; section?: string }[] = [
   { view: "overzicht", label: "Overzicht" },
@@ -28,6 +29,7 @@ const nav: { view: View; label: string; section?: string }[] = [
   { view: "boekingen", label: "Boekingen", section: "Boekhouding" },
   { view: "nieuw", label: "Nieuwe boeking" },
   { view: "btw", label: "Btw-aangifte", section: "Belastingen" },
+  { view: "ib", label: "IB-prognose" },
   { view: "uren", label: "Uren" },
   { view: "activa", label: "Activa" },
   { view: "winstverlies", label: "Winst & verlies", section: "Overzichten" },
@@ -70,6 +72,7 @@ export function App() {
         <ErrorBoundary key={view}>
           {view === "overzicht" && <DashboardView year={year} go={(v) => setView(v as View)} />}
           {view === "btw" && <Vat year={year} />}
+          {view === "ib" && <IncomeTax year={year} />}
           {view === "uren" && <Hours year={year} />}
           {view === "activa" && <Assets />}
           {view === "verkoop" && <SalesInvoices year={year} />}
