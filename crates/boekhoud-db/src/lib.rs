@@ -13,6 +13,7 @@ mod migrations;
 mod platforms;
 mod purchases;
 mod queries;
+mod reports;
 mod sales;
 mod tax;
 mod vat;
@@ -42,6 +43,9 @@ pub use platforms::{
 };
 pub use purchases::{PurchaseInput, PurchaseInvoiceDetail, PurchaseInvoiceSummary};
 pub use queries::{Dashboard, EntryDetail, EntrySummary, LedgerCard, LedgerCardRow, LineView, PeriodView};
+pub use reports::{
+    balance_sheet_csv, csv_amount, profit_and_loss_csv, trial_balance_csv, BalanceSheet, ProfitAndLoss, ReportLine,
+};
 pub use sales::{IssueRequirements, SalesInvoiceDetail, SalesInvoiceInput, SalesInvoiceSummary};
 pub use tax::{TaxCode, VatRegime};
 pub use vat::{quarter_of, FiledInfo, IcpLine, RubricLine, VatDetailLine, VatReturn};
