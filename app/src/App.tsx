@@ -13,10 +13,10 @@ import { Purchases } from "./views/Purchases";
 import { SalesInvoices } from "./views/SalesInvoices";
 import { NewEntry } from "./views/NewEntry";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { ChartOfAccounts, LedgerCardView, TrialBalance } from "./views/Reports";
+import { BalanceSheetView, ChartOfAccounts, LedgerCardView, ProfitAndLossView, TrialBalance } from "./views/Reports";
 import { Periods, Settings } from "./views/Settings";
 
-type View = "overzicht" | "btw" | "uren" | "activa" | "verkoop" | "inkoop" | "platformen" | "bank" | "contacten" | "boekingen" | "nieuw" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
+type View = "overzicht" | "btw" | "uren" | "activa" | "verkoop" | "inkoop" | "platformen" | "bank" | "contacten" | "boekingen" | "nieuw" | "winstverlies" | "balans" | "proefbalans" | "grootboek" | "perioden" | "rekeningschema" | "instellingen";
 
 const nav: { view: View; label: string; section?: string }[] = [
   { view: "overzicht", label: "Overzicht" },
@@ -30,7 +30,9 @@ const nav: { view: View; label: string; section?: string }[] = [
   { view: "btw", label: "Btw-aangifte", section: "Belastingen" },
   { view: "uren", label: "Uren" },
   { view: "activa", label: "Activa" },
-  { view: "proefbalans", label: "Proef- en saldibalans", section: "Overzichten" },
+  { view: "winstverlies", label: "Winst & verlies", section: "Overzichten" },
+  { view: "balans", label: "Balans" },
+  { view: "proefbalans", label: "Proef- en saldibalans" },
   { view: "grootboek", label: "Grootboekkaart" },
   { view: "perioden", label: "Perioden", section: "Beheer" },
   { view: "rekeningschema", label: "Rekeningschema" },
@@ -77,6 +79,8 @@ export function App() {
           {view === "contacten" && <Contacts />}
           {view === "boekingen" && <Entries year={year} />}
           {view === "nieuw" && <NewEntry onPosted={() => undefined} />}
+          {view === "winstverlies" && <ProfitAndLossView key={year} year={year} />}
+          {view === "balans" && <BalanceSheetView key={year} year={year} />}
           {view === "proefbalans" && <TrialBalance year={year} onOpenAccount={openAccount} />}
           {view === "grootboek" && <LedgerCardView year={year} account={account} onAccount={setAccount} />}
           {view === "perioden" && <Periods year={year} />}

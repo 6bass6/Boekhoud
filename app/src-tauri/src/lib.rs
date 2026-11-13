@@ -14,8 +14,8 @@ use std::sync::Mutex;
 
 use boekhoud_core::{Account, Currency, EntryDraft, EntryLine, JournalCode, Money, Source};
 use boekhoud_db::{
-    ChainStatus, Company, EntryDetail, EntrySummary, Ledger, LedgerCard, PeriodView, PostedEntry, TaxCode,
-    TrialBalanceRow, VatRegime,
+    BalanceSheet, ChainStatus, Company, EntryDetail, EntrySummary, Ledger, LedgerCard, PeriodView, PostedEntry,
+    ProfitAndLoss, TaxCode, TrialBalanceRow, VatRegime,
 };
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
@@ -174,6 +174,46 @@ fn trial_balance(state: State<AppState>, until: Option<String>) -> CmdResult<Vec
 }
 
 #[tauri::command]
+fn profit_and_loss(state: State<AppState>, until: String) -> CmdResult<ProfitAndLoss> {
+    let until = parse_date(&until)?;
+    with_ledger(&state, |l| l.profit_and_loss(until))
+}
+
+#[tauri::command]
+fn balance_sheet(state: State<AppState>, until: String) -> CmdResult<BalanceSheet> {
+    let until = parse_date(&until)?;
+    with_ledger(&state, |l| l.balance_sheet(until))
+}
+
+/// Write a report as CSV to the data folder's `exports/` and return the path.
+/// shortcut: no save dialog (no dialog plugin in the app); add tauri-plugin-dialog if the owner wants to choose a folder.
+#[tauri::command]
+fn export_report_csv(state: State<AppState>, report: String, until: String) -> CmdResult<String> {
+    let until = parse_date(&until)?;
+    let (name, text) = match report.as_str() {
+        "winst-verlies" => (
+            "winst-en-verlies",
+            with_ledger(&state, |l| l.profit_and_loss(until)).map(|p| boekhoud_db::profit_and_loss_csv(&p))?,
+        ),
+        "balans" => (
+            "balans",
+            with_ledger(&state, |l| l.balance_sheet(until)).map(|b| boekhoud_db::balance_sheet_csv(&b))?,
+        ),
+        "proefbalans" => (
+            "proefbalans",
+            with_ledger(&state, |l| l.trial_balance(Some(until)))
+                .map(|tb| boekhoud_db::trial_balance_csv(until, &tb))?,
+        ),
+        other => return Err(format!("Onbekend overzicht: {other}")),
+    };
+    let dir = state.data_dir.join("exports");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Exportmap aanmaken mislukt: {e}"))?;
+    let dest = dir.join(format!("{name}-{}.csv", until.format("%Y-%m-%d")));
+    std::fs::write(&dest, text).map_err(|e| format!("Bestand schrijven mislukt: {e}"))?;
+    Ok(dest.display().to_string())
+}
+
+#[tauri::command]
 fn ledger_card(state: State<AppState>, account: String, year: i32) -> CmdResult<LedgerCard> {
     with_ledger(&state, |l| l.ledger_card(&account, year))
 }
@@ -313,6 +353,9 @@ pub fn run() {
             reverse_entry,
             trial_balance,
             ledger_card,
+            profit_and_loss,
+            balance_sheet,
+            export_report_csv,
             periods,
             close_period,
             reopen_period,

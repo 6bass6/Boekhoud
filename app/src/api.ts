@@ -30,6 +30,36 @@ export interface TrialBalanceRow {
   balance_cents: number;
 }
 
+export interface ReportLine {
+  account: string;
+  name: string;
+  amount_cents: number;
+}
+
+export interface ProfitAndLoss {
+  from: string;
+  until: string;
+  revenue: ReportLine[];
+  expenses: ReportLine[];
+  revenue_cents: number;
+  expenses_cents: number;
+  result_cents: number;
+}
+
+export interface BalanceSheet {
+  until: string;
+  assets: ReportLine[];
+  liabilities: ReportLine[];
+  equity: ReportLine[];
+  prior_years_result_cents: number;
+  current_year_result_cents: number;
+  assets_cents: number;
+  liabilities_cents: number;
+  equity_cents: number;
+}
+
+export type ReportKind = "winst-verlies" | "balans" | "proefbalans";
+
 export interface PostedEntry {
   id: string;
   journal: string;
@@ -339,6 +369,10 @@ export const api = {
   entryDetail: (id: string) => invoke<EntryDetail>("entry_detail", { id }),
   reverseEntry: (id: string, date: string, reason: string) => invoke<PostedEntry>("reverse_entry", { id, date, reason }),
   trialBalance: (until: string | null) => invoke<TrialBalanceRow[]>("trial_balance", { until }),
+  profitAndLoss: (until: string) => invoke<ProfitAndLoss>("profit_and_loss", { until }),
+  balanceSheet: (until: string) => invoke<BalanceSheet>("balance_sheet", { until }),
+  /** Writes a CSV to the data folder's exports/ and returns its path. */
+  exportReportCsv: (report: ReportKind, until: string) => invoke<string>("export_report_csv", { report, until }),
   ledgerCard: (account: string, year: number) => invoke<LedgerCard>("ledger_card", { account, year }),
   periods: (year: number) => invoke<PeriodView[]>("periods", { year }),
   closePeriod: (year: number, month: number) => invoke<void>("close_period", { year, month }),

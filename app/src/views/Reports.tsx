@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type AccountType } from "../api";
+import { api, type AccountType, type ReportKind, type ReportLine } from "../api";
 import { useLoad } from "../hooks";
 import { formatDate, formatEuro } from "../money";
 
@@ -10,6 +10,96 @@ export const typeLabel: Record<AccountType, string> = {
   revenue: "Opbrengsten",
   expense: "Kosten",
 };
+
+/** Button that writes the report as CSV to the data folder and shows where it went. */
+function ExportButton({ report, until }: { report: ReportKind; until: string }) {
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const run = () =>
+    api.exportReportCsv(report, until)
+      .then((path) => setMsg({ ok: true, text: `Opgeslagen als ${path}` }))
+      .catch((e) => setMsg({ ok: false, text: String(e) }));
+  return (
+    <>
+      <button onClick={run}>Exporteren (CSV)</button>
+      {msg && <p className={msg.ok ? "ok small" : "error"}>{msg.text}</p>}
+    </>
+  );
+}
+
+function ReportRows({ title, lines, totalLabel, total, extra = [] }: {
+  title: string; lines: ReportLine[]; totalLabel: string; total: number; extra?: { name: string; amount_cents: number }[];
+}) {
+  return (
+    <>
+      <tr><th colSpan={3}>{title}</th></tr>
+      {lines.map((l) => (
+        <tr key={l.account}><td>{l.account}</td><td className="desc">{l.name}</td><td className="num">{formatEuro(l.amount_cents)}</td></tr>
+      ))}
+      {extra.map((l) => (
+        <tr key={l.name}><td /><td className="desc"><em>{l.name}</em></td><td className="num">{formatEuro(l.amount_cents)}</td></tr>
+      ))}
+      <tr className="total"><td /><td><strong>{totalLabel}</strong></td><td className="num"><strong>{formatEuro(total)}</strong></td></tr>
+    </>
+  );
+}
+
+export function ProfitAndLossView({ year }: { year: number }) {
+  const [until, setUntil] = useState(`${year}-12-31`);
+  const pl = useLoad(() => api.profitAndLoss(until), [until]);
+  const p = pl.data;
+  return (
+    <section>
+      <header className="row">
+        <h2>Winst & verlies {year}</h2>
+        <label>t/m <input type="date" min={`${year}-01-01`} max={`${year}-12-31`} value={until} onChange={(e) => e.target.value && setUntil(e.target.value)} /></label>
+        <ExportButton report="winst-verlies" until={until} />
+      </header>
+      <p className="muted small">Alleen boekingen van 1 januari {year} tot en met de gekozen datum.</p>
+      {pl.error && <p className="error">{pl.error}</p>}
+      {p && (
+        <table>
+          <tbody>
+            <ReportRows title="Opbrengsten" lines={p.revenue} totalLabel="Totaal opbrengsten" total={p.revenue_cents} />
+            <ReportRows title="Kosten" lines={p.expenses} totalLabel="Totaal kosten" total={p.expenses_cents} />
+          </tbody>
+          <tfoot><tr><td colSpan={2}>Resultaat</td><td className="num">{formatEuro(p.result_cents)}</td></tr></tfoot>
+        </table>
+      )}
+    </section>
+  );
+}
+
+export function BalanceSheetView({ year }: { year: number }) {
+  const [until, setUntil] = useState(`${year}-12-31`);
+  const bs = useLoad(() => api.balanceSheet(until), [until]);
+  const b = bs.data;
+  return (
+    <section>
+      <header className="row">
+        <h2>Balans per {formatDate(until)}</h2>
+        <label>Datum <input type="date" value={until} onChange={(e) => e.target.value && setUntil(e.target.value)} /></label>
+        <ExportButton report="balans" until={until} />
+      </header>
+      <p className="muted small">
+        Er is nog geen jaarafsluiting: de resultaten van voorgaande jaren en van het lopende jaar zijn berekend, niet geboekt.
+      </p>
+      {bs.error && <p className="error">{bs.error}</p>}
+      {b && (
+        <table>
+          <tbody>
+            <ReportRows title="Activa" lines={b.assets} totalLabel="Totaal activa" total={b.assets_cents} />
+            <ReportRows title="Vreemd vermogen" lines={b.liabilities} totalLabel="Totaal vreemd vermogen" total={b.liabilities_cents} />
+            <ReportRows title="Eigen vermogen" lines={b.equity} totalLabel="Totaal eigen vermogen" total={b.equity_cents} extra={[
+              { name: "Resultaat voorgaande boekjaren (berekend)", amount_cents: b.prior_years_result_cents },
+              { name: "Resultaat lopend boekjaar (berekend)", amount_cents: b.current_year_result_cents },
+            ]} />
+          </tbody>
+          <tfoot><tr><td colSpan={2}>Totaal passiva</td><td className="num">{formatEuro(b.liabilities_cents + b.equity_cents)}</td></tr></tfoot>
+        </table>
+      )}
+    </section>
+  );
+}
 
 export function TrialBalance({ year, onOpenAccount }: { year: number; onOpenAccount: (account: string) => void }) {
   const tb = useLoad(() => api.trialBalance(`${year}-12-31`), [year]);
@@ -36,6 +126,7 @@ export function TrialBalance({ year, onOpenAccount }: { year: number; onOpenAcco
       <header className="row">
         <h2>Proef- en saldibalans t/m 31-12-{year}</h2>
         <button onClick={check}>Integriteit controleren</button>
+        <ExportButton report="proefbalans" until={`${year}-12-31`} />
       </header>
       <p className="muted small">Cumulatief over alle boekingen tot en met de einddatum.</p>
       {chain && <p className={chainOk ? "ok" : "error"}>{chain}</p>}
