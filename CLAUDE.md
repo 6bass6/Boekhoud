@@ -19,7 +19,8 @@ cargo fmt --all                                           # rustfmt.toml: max_wi
 pnpm install
 pnpm build                                                # tsc --noEmit + vite build (type check)
 pnpm tauri dev                                            # run the app (debug build → separate dev data folder)
-pnpm tauri build                                          # Windows installer in target/release/bundle/
+pnpm tauri build                                          # Windows installer in target/release/bundle/ (unsigned)
+# Release with auto-update: see docs/releasing.md (bump version, notes, tag vX.Y.Z)
 
 # Fictional demo data (refuses to overwrite an existing file)
 cargo run -p boekhoud-db --example demo_data -- <path>/boekhoud.sqlite

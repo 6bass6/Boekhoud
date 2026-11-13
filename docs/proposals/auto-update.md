@@ -1,6 +1,6 @@
 # Proposal: automatic update check and safe updates
 
-**Status: pending_approval** (proposed 2026-11-13; nothing implemented yet)
+**Status: approved — implemented** (approved and implemented 2026-11-13)
 
 Owner request: the app checks for new releases automatically and can update itself while the
 database stays intact.

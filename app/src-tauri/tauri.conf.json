@@ -44,5 +44,16 @@
         ]
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU2QjU1MzU3RDU1REQ1QzMKUldURDFWM1ZWMU8xNXMvZ2hBY3dRNzVrL3RaRWIzd1hsV05ydjBMbUZMeDhqT01ZeE9NMHpLK20K",
+      "endpoints": [
+        "https://github.com/6bass6/Boekhoud/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

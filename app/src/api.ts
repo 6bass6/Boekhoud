@@ -145,6 +145,8 @@ export type ChainStatus = { Intact: number } | { Broken: { chain_index: number; 
 export interface AppInfo {
   version: string;
   data_dir: string;
+  /** Why the administration could not be opened; then only this message and the update check are shown. */
+  open_error: string | null;
 }
 
 export interface Verification { ok: boolean; entries: number; documents: number; problems: string[] }

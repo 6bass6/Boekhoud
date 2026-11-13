@@ -45,5 +45,7 @@ in parallel with a spreadsheet for at least one VAT period.
   mirror), verified after writing (integrity check, hash chain, document checksums), retention of 14
   automatic backups, optional extra folder (USB/OneDrive), restore test, export/import package for
   moving to another PC (see `docs/backup.md`). **Not yet:** backup encryption, configurable data folder.
+- **Phase 7** also: auto-update via signed GitHub Releases (check at start, install after a click and a
+  verified backup; a database from a newer version is refused). See `docs/releasing.md`.
 - **Next:** year-end closing, then phase 5 (UBL import, local OCR, recurring-expense detection) and
   phase 7 items (XAF export, backup encryption, code signing).

@@ -134,7 +134,8 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
    history append-only.
 7. **Exchange rates** can be stored and used, but there is no ECB import screen.
 8. **No asset disposal**, no link from asset to its purchase invoice in the UI.
-9. **No code signing, auto-updater, backup encryption or SQLCipher** yet (phase 7). Automatic verified
+9. **No Windows code signing, backup encryption or SQLCipher** yet (phase 7). The auto-updater exists
+   (signed GitHub Releases, backup before install; see `docs/releasing.md`). Automatic verified
    backups, an extra backup folder and export/import for a new PC exist (`boekhoud-db/src/backup.rs`,
    `docs/backup.md`); backups are unencrypted and the data folder is not configurable.
 10. ~~`tests.rs` is large~~ — done: split into `crates/boekhoud-db/src/tests/` per area.
@@ -156,7 +157,7 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
    Restore stays manual by design (steps in `docs/backup.md`).
 7. **Phase 5 automation**: UBL/Peppol invoice import, local OCR via `Windows.Media.Ocr`, recurring-expense
    detection, missing-receipt reminders. All of it produces proposals only.
-8. **Phase 7 hardening**: code signing, Tauri updater, SQLCipher evaluation.
+8. **Phase 7 hardening**: Windows code signing, SQLCipher evaluation.
 
 ## 6. Owner's context worth knowing
 

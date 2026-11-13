@@ -14,6 +14,7 @@ import { Purchases } from "./views/Purchases";
 import { SalesInvoices } from "./views/SalesInvoices";
 import { NewEntry } from "./views/NewEntry";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { UpdateNotice } from "./components/UpdateNotice";
 import { BalanceSheetView, ChartOfAccounts, LedgerCardView, ProfitAndLossView, TrialBalance } from "./views/Reports";
 import { Periods, Settings } from "./views/Settings";
 
@@ -68,28 +69,40 @@ export function App() {
       </nav>
       <main>
         {info.error && <p className="error">{info.error}</p>}
-        {/* key resets the boundary when switching screens */}
-        <ErrorBoundary key={view}>
-          {view === "overzicht" && <DashboardView year={year} go={(v) => setView(v as View)} />}
-          {view === "btw" && <Vat year={year} />}
-          {view === "ib" && <IncomeTax year={year} />}
-          {view === "uren" && <Hours year={year} />}
-          {view === "activa" && <Assets />}
-          {view === "verkoop" && <SalesInvoices year={year} />}
-          {view === "inkoop" && <Purchases year={year} />}
-          {view === "platformen" && <Platforms year={year} />}
-          {view === "bank" && <Bank year={year} />}
-          {view === "contacten" && <Contacts />}
-          {view === "boekingen" && <Entries year={year} />}
-          {view === "nieuw" && <NewEntry onPosted={() => undefined} />}
-          {view === "winstverlies" && <ProfitAndLossView key={year} year={year} />}
-          {view === "balans" && <BalanceSheetView key={year} year={year} />}
-          {view === "proefbalans" && <TrialBalance year={year} onOpenAccount={openAccount} />}
-          {view === "grootboek" && <LedgerCardView year={year} account={account} onAccount={setAccount} />}
-          {view === "perioden" && <Periods year={year} />}
-          {view === "rekeningschema" && <ChartOfAccounts />}
-          {view === "instellingen" && <Settings />}
-        </ErrorBoundary>
+        {info.data && <UpdateNotice auto canBackup={!info.data.open_error} />}
+        {info.data?.open_error ? (
+          <div>
+            <h2>De administratie kan niet worden geopend</h2>
+            <p className="error">{info.data.open_error}</p>
+            <p className="muted small">Gegevensmap: {info.data.data_dir}</p>
+            <UpdateNotice canBackup={false} />
+          </div>
+        ) : (
+          <>
+            {/* key resets the boundary when switching screens */}
+            <ErrorBoundary key={view}>
+              {view === "overzicht" && <DashboardView year={year} go={(v) => setView(v as View)} />}
+              {view === "btw" && <Vat year={year} />}
+              {view === "ib" && <IncomeTax year={year} />}
+              {view === "uren" && <Hours year={year} />}
+              {view === "activa" && <Assets />}
+              {view === "verkoop" && <SalesInvoices year={year} />}
+              {view === "inkoop" && <Purchases year={year} />}
+              {view === "platformen" && <Platforms year={year} />}
+              {view === "bank" && <Bank year={year} />}
+              {view === "contacten" && <Contacts />}
+              {view === "boekingen" && <Entries year={year} />}
+              {view === "nieuw" && <NewEntry onPosted={() => undefined} />}
+              {view === "winstverlies" && <ProfitAndLossView key={year} year={year} />}
+              {view === "balans" && <BalanceSheetView key={year} year={year} />}
+              {view === "proefbalans" && <TrialBalance year={year} onOpenAccount={openAccount} />}
+              {view === "grootboek" && <LedgerCardView year={year} account={account} onAccount={setAccount} />}
+              {view === "perioden" && <Periods year={year} />}
+              {view === "rekeningschema" && <ChartOfAccounts />}
+              {view === "instellingen" && <Settings />}
+            </ErrorBoundary>
+          </>
+        )}
       </main>
     </div>
   );

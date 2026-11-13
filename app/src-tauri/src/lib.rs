@@ -28,12 +28,16 @@ pub(crate) struct AppState {
     pub(crate) data_dir: PathBuf,
     /// Result of the last backup to the extra folder (shown in Instellingen).
     pub(crate) backup_notice: Mutex<Option<String>>,
+    /// Why the administration could not be opened; the UI then shows only this message (and the
+    /// update check, so a newer version can be installed). The ledger is an empty in-memory one.
+    open_error: Option<String>,
 }
 
 #[derive(Serialize)]
 struct AppInfo {
     version: String,
     data_dir: String,
+    open_error: Option<String>,
 }
 
 pub(crate) type CmdResult<T> = Result<T, String>;
@@ -128,6 +132,7 @@ fn app_info(app: tauri::AppHandle, state: State<AppState>) -> AppInfo {
     AppInfo {
         version: app.package_info().version.to_string(),
         data_dir: state.data_dir.display().to_string(),
+        open_error: state.open_error.clone(),
     }
 }
 
@@ -312,6 +317,14 @@ fn data_dir_from(env_override: Option<PathBuf>, app_data: PathBuf, debug: bool) 
     }
 }
 
+/// Dutch text for a failure in [`open_ledger`].
+fn open_error_nl(e: &(dyn std::error::Error + 'static)) -> String {
+    match e.downcast_ref::<boekhoud_db::DbError>() {
+        Some(db) => messages::db_nl(db),
+        None => format!("De administratie kon niet worden geopend: {e}"),
+    }
+}
+
 /// Open the database, making a timestamped backup first if migrations are pending.
 fn open_ledger(data_dir: &Path) -> Result<Ledger, Box<dyn std::error::Error>> {
     std::fs::create_dir_all(data_dir)?;
@@ -328,15 +341,27 @@ fn open_ledger(data_dir: &Path) -> Result<Ledger, Box<dyn std::error::Error>> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let data_dir = resolve_data_dir(app.path().app_data_dir()?);
-            let ledger = open_ledger(&data_dir)?;
+            // Start even when the administration cannot be opened, so the owner sees why (no console on
+            // Windows) and can still install an update.
+            let (ledger, open_error) = match open_ledger(&data_dir) {
+                Ok(l) => (l, None),
+                Err(e) => (Ledger::open_in_memory()?, Some(open_error_nl(e.as_ref()))),
+            };
+            let opened = open_error.is_none();
             app.manage(AppState {
                 ledger: Mutex::new(ledger),
                 data_dir,
                 backup_notice: Mutex::new(None),
+                open_error,
             });
-            backup::start_auto_backup(app.handle().clone());
+            // Never back up the empty stand-in ledger: it would count as a good backup in retention.
+            if opened {
+                backup::start_auto_backup(app.handle().clone());
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

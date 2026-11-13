@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type BackupInfo, type Company, type VatRegime } from "../api";
 import { useLoad } from "../hooks";
 import { monthNames, todayIso } from "../money";
+import { UpdateNotice } from "../components/UpdateNotice";
 
 export function Periods({ year }: { year: number }) {
   const periods = useLoad(() => api.periods(year), [year]);
@@ -220,6 +221,13 @@ function Backups() {
         Administratie importeren
       </button>
       {message?.at === "move" && <p className={message.ok ? "ok" : "error"}>{message.text}</p>}
+
+      <h3>Updates</h3>
+      <p className="muted small">
+        Bij het starten kijkt de app of er een nieuwe versie is (alleen een versiebestand van GitHub, er gaan geen
+        gegevens mee). Installeren gebeurt pas na je klik, na een gecontroleerde back-up.
+      </p>
+      <UpdateNotice />
     </>
   );
 }

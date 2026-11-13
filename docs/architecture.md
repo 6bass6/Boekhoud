@@ -132,4 +132,5 @@ date is in the future; any change creates a new document and an audit log entry.
 
 - Windows installer (NSIS/MSI) built by GitHub Actions.
 - Code signing before real use (otherwise SmartScreen warnings).
-- Tauri updater for new versions; migrations run only after an automatic backup.
+- Tauri updater for new versions (signed GitHub Releases, `latest.json`); installing needs a click and a
+  verified backup first; migrations run only after an automatic copy; a newer schema is refused.
