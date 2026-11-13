@@ -1339,3 +1339,57 @@ fn dashboard_summarises_the_year() {
     assert_eq!(db.vat_position_cents, 21_000);
     assert_eq!(db.revenue_by_month[2], 100_000);
 }
+
+#[test]
+fn income_tax_estimate_uses_ledger_result_hours_and_latest_parameters() {
+    let mut l = Ledger::open_in_memory().unwrap();
+    complete_company(&mut l);
+    let c = customer(&mut l, None);
+    let inv = l
+        .create_sales_invoice(&invoice_input(&c, d(2026, 3, 5), "V21"))
+        .unwrap();
+    l.issue_sales_invoice(&inv).unwrap();
+    let today = d(2026, 11, 13);
+
+    // Profit 1.000,00, hours not met: no ondernemersaftrek; mkb 12,7% = 127,00; taxable 873,00.
+    let v = l.income_tax_estimate(2026, today, 0, 0, true).unwrap();
+    assert_eq!((v.parameter_year, v.remaining_months), (2026, 2));
+    assert_eq!(v.params.brackets.len(), 3);
+    assert_eq!(v.params.arbeidskorting.len(), 5);
+    assert_eq!(v.params.algemene_heffingskorting[1].rate_micro, -63_980);
+    let e = &v.estimate;
+    assert_eq!(
+        (e.profit_cents, e.ondernemersaftrek_cents, e.mkb_vrijstelling_cents),
+        (100_000, 0, 12_700)
+    );
+    // Tax 35,75% × 873,00 = 312,10 is cancelled by the credits; Zvw 4,85% × 873,00 = 42,34.
+    assert_eq!((e.tax_after_credits_cents, e.zvw_cents), (0, 4_234));
+    // Withheld 50,00 → refund of 7,66; no reserve.
+    let v = l.income_tax_estimate(2026, today, 0, 5_000, false).unwrap();
+    assert_eq!(
+        (v.estimate.to_pay_cents, v.estimate.monthly_reserve_cents),
+        (-766, None)
+    );
+    assert!(v
+        .sources
+        .iter()
+        .all(|s| s.starts_with("https://www.belastingdienst.nl/")));
+
+    // Urencriterium met: zelfstandigenaftrek capped at the profit (not a starter) → taxable 0.
+    // Raw insert: one entry of 1,225 h is refused by save_time_entry (max 24 h per day).
+    l.conn
+        .execute(
+            "INSERT INTO time_entry (id, entry_date, minutes, activity) VALUES ('t1', '2026-06-30', ?1, 'Ontwikkeling')",
+            [HOURS_CRITERION * 60],
+        )
+        .unwrap();
+    let e = l.income_tax_estimate(2026, today, 0, 0, false).unwrap().estimate;
+    assert_eq!(
+        (e.zelfstandigenaftrek_cents, e.taxable_profit_cents, e.total_cents),
+        (100_000, 0, 0)
+    );
+
+    // A year without parameters falls back to the latest year that has them.
+    let v = l.income_tax_estimate(2027, today, 0, 0, false).unwrap();
+    assert_eq!((v.year, v.parameter_year, v.remaining_months), (2027, 2026, 12));
+}

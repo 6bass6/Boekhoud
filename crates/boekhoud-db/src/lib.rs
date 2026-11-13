@@ -9,6 +9,7 @@ mod company;
 mod contacts;
 mod documents;
 mod hours;
+mod income_tax;
 mod migrations;
 mod platforms;
 mod purchases;
@@ -37,6 +38,7 @@ pub use company::Company;
 pub use contacts::Contact;
 pub use documents::{mime_from_filename, DocumentInfo};
 pub use hours::{HoursSummary, TimeEntry, HOURS_CRITERION};
+pub use income_tax::IncomeTaxView;
 pub use migrations::MIGRATIONS;
 pub use platforms::{
     CurrencyAmount, EurAmount, PlatformConfig, PlatformReportInput, PlatformReportView, ProductAmount, ProductRevenue,
