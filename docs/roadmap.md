@@ -35,5 +35,10 @@ in parallel with a spreadsheet for at least one VAT period.
   **Not yet:** income-tax estimate (IB-prognose: ondernemersaftrek, mkb-winstvrijstelling, Zvw, salary
   input) — needs the 2026/2027 parameters as data with sources; KOR-specific purchase codes;
   disposal of assets.
+- **Phase 7** partly started: per-year **Winst & verlies** (up to a chosen date) and **Balans** with the
+  results of prior years and the current year as computed (not posted) equity lines; CSV export
+  (semicolon, comma decimal, UTF-8 with BOM) of both and of the trial balance, written to the data
+  folder's `exports/`. **Not yet:** year-end closing/opening balance, cost per category, revenue per
+  app, XLSX/PDF export, a save dialog.
 - **Next:** IB-prognose, then phase 5 (UBL import, local OCR, recurring-expense detection) and
   phase 7 items (year-end closing, XAF export, scheduled encrypted backups, code signing).

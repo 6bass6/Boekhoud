@@ -50,6 +50,7 @@ full test suite + the NSIS/MSI installer build on Windows. The installer is uplo
 | **Btw-aangifte** | Quarterly VAT return per rubriek with drill-down, warnings, rounding, ICP listing, linking Apple/Google contacts for ICP, filing (clears VAT accounts to 1520, closes months). |
 | **Uren** | Time entries and timer; urencriterium (1,225 h) progress and weekly pace. |
 | **Activa** | Asset register; monthly straight-line depreciation posting. |
+| **Winst & verlies / Balans** | Per-year P&L (1 January up to a chosen date) and balance sheet at a date, with prior-year and current-year results as computed equity lines; "Exporteren (CSV)" writes to `exports/` in the data folder and shows the path. |
 | **Proef- en saldibalans / Grootboekkaart / Perioden / Rekeningschema / Instellingen** | Reports, period closing with audited reopening, chart of accounts, company details, VAT regime, manual backup, hash-chain integrity check. |
 
 ### Integrity guarantees (enforced in code **and** by SQLite triggers)
@@ -87,6 +88,7 @@ crates/boekhoud-db       SQLite storage; Ledger is the single entry point
   bank.rs                Bank accounts, import, suggestions, processing, reconciliation
   vat.rs                 VAT return, detail, ICP, filing
   hours.rs assets.rs queries.rs (entries, ledger cards, periods, dashboard)
+  reports.rs             Per-year P&L, balance sheet with computed result lines, Dutch CSV
   tests.rs               Integration tests per phase (fictional data)
   examples/demo_data.rs  Fictional demo database covering all modules
 
@@ -109,7 +111,10 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
    owner provides real exports. Never commit real files; build anonymised fixtures from them.
 2. **No year-end closing.** P&L accounts are not closed to equity. The trial balance up to a date is
    cumulative over all years, so from the second year it mixes years for revenue/expense accounts.
-   Ledger cards already restart P&L accounts per year.
+   Ledger cards already restart P&L accounts per year. *Mitigated in reports:* "Winst & verlies" and
+   "Balans" (`crates/boekhoud-db/src/reports.rs`) split years by computation; the balance sheet shows the
+   result of prior years and of the current year as computed equity lines. Closing entries and an
+   opening balance are still missing, and the trial balance remains cumulative.
 3. **All bank accounts post to ledger account 1100.** A second bank account (e.g. savings) needs its
    own ledger account (`bank_account.ledger_account` exists but is always set to 1100).
 4. **No income-tax estimate (IB-prognose).** Not started; needs yearly parameters as data with sources.
@@ -137,7 +142,9 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
    advice. Show clearly: accounting profit ≠ fiscal profit ≠ taxable income ≠ final assessment. Tests with
    fixed parameters.
 2. **Year-end closing** + opening balance, and a per-year trial balance / P&L / balance sheet.
-3. **Reports and exports**: P&L, balance sheet, cost per category, revenue per app in EUR; CSV/XLSX/PDF.
+3. **Reports and exports** — partly done: per-year P&L and balance sheet with CSV export (also the trial
+   balance). Still open: cost per category, revenue per app in EUR, XLSX/PDF, a save dialog (CSV now goes
+   to `exports/` in the data folder because the app has no dialog plugin).
 4. **XAF export** (XML Auditfile Financieel 3.2) for accountants and the Belastingdienst.
 5. **Validate importers with real exports** once the owner has them (see limitation 1).
 6. **Backups**: scheduled daily backup of database + documents to a chosen folder, optional encryption,
