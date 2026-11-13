@@ -73,7 +73,7 @@ Node 22, pnpm 10 (`corepack enable`), WebView2 (present on Windows 10/11).
 1. Pure arithmetic → `boekhoud-core` (with unit tests).
 2. Storage + booking → a module in `boekhoud-db/src/`, `impl Ledger { … }`, one
    `transaction_with_behavior(TransactionBehavior::Immediate)`, `post_in_tx`, `audit`, commit.
-3. Integration tests in `boekhoud-db/src/tests.rs` (or a new test module): happy path, idempotency
+3. Integration tests in the matching file under `boekhoud-db/src/tests/` (helpers in `mod.rs`) or a new test module: happy path, idempotency
    (second attempt refused), immutability (raw SQL update fails), and the resulting trial balance.
 4. Re-export public types in `boekhoud-db/src/lib.rs`.
 

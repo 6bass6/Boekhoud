@@ -96,7 +96,8 @@ crates/boekhoud-db       SQLite storage; Ledger is the single entry point
   hours.rs assets.rs queries.rs (entries, ledger cards, periods, dashboard)
   reports.rs             Per-year P&L, balance sheet with computed result lines, Dutch CSV
   backup.rs              Backups (verify, retention, settings file), export/import package; backup_tests.rs
-  tests.rs               Integration tests per phase (fictional data)
+  tests/                 Integration tests (fictional data): mod.rs shared helpers; ledger.rs, invoicing.rs,
+                         platforms.rs, bank.rs, tax.rs per area
   examples/demo_data.rs  Fictional demo database covering all modules
 
 crates/boekhoud-import   Pure parsers: apple.rs, google.rs, bank.rs (CAMT.053 + CSV), text.rs helpers
@@ -136,7 +137,7 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
 9. **No code signing, auto-updater, backup encryption or SQLCipher** yet (phase 7). Automatic verified
    backups, an extra backup folder and export/import for a new PC exist (`boekhoud-db/src/backup.rs`,
    `docs/backup.md`); backups are unencrypted and the data folder is not configurable.
-10. **`crates/boekhoud-db/src/tests.rs` is large** (~1,300 lines); splitting per module would help.
+10. ~~`tests.rs` is large~~ — done: split into `crates/boekhoud-db/src/tests/` per area.
 11. ~~UI has no React error boundary~~ — done: `components/ErrorBoundary.tsx` wraps each screen; a render error shows a Dutch message with "Probeer opnieuw" and the navigation keeps working.
 12. **UI was only checked on Linux** (WebKitGTK under Xvfb). Real Windows/WebView2 testing by the owner
     is still needed (PDF iframe preview, file pickers, opening documents with `explorer`).
@@ -155,7 +156,7 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
    Restore stays manual by design (steps in `docs/backup.md`).
 7. **Phase 5 automation**: UBL/Peppol invoice import, local OCR via `Windows.Media.Ocr`, recurring-expense
    detection, missing-receipt reminders. All of it produces proposals only.
-8. **Phase 7 hardening**: code signing, Tauri updater, SQLCipher evaluation, splitting tests.
+8. **Phase 7 hardening**: code signing, Tauri updater, SQLCipher evaluation.
 
 ## 6. Owner's context worth knowing
 
