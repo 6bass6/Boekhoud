@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "boekhoud-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "boekhoud-core",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "boekhoud-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "hex",
@@ -199,7 +199,7 @@ dependencies = [
 
 [[package]]
 name = "boekhoud-db"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "boekhoud-core",
  "chrono",
@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "boekhoud-import"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "boekhoud-core",
  "chrono",
@@ -228,7 +228,7 @@ dependencies = [
 
 [[package]]
 name = "boekhoud-pdf"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pdf-writer",
 ]
