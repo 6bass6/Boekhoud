@@ -2,6 +2,7 @@
 
 pub mod account;
 pub mod hash;
+pub mod income_tax;
 pub mod invoice;
 pub mod journal;
 pub mod money;
