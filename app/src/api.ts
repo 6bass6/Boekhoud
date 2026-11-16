@@ -282,6 +282,24 @@ export interface PurchaseForm {
   lines: PurchaseLineForm[];
 }
 
+export interface PurchaseSuggestion {
+  source: "ubl" | "text";
+  contact_id: string | null;
+  supplier_name: string | null;
+  supplier_vat: string | null;
+  supplier_kvk: string | null;
+  supplier_iban: string | null;
+  supplier_reference: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  net_cents: number | null;
+  vat_cents: number | null;
+  total_cents: number | null;
+  vat_rate_bp: number | null;
+  tax_code: string | null;
+  account: string | null;
+}
+
 export interface DocumentInfo {
   id: string;
   sha256: string;
@@ -440,6 +458,7 @@ export const api = {
   openSalesInvoicePdf: (id: string) => invoke<void>("open_sales_invoice_pdf", { id }),
 
   registerPurchase: (invoice: PurchaseForm) => invoke<PurchaseSummary>("register_purchase_invoice", { invoice }),
+  extractPurchase: (documentId: string) => invoke<PurchaseSuggestion>("extract_purchase", { documentId }),
   correctPurchase: (id: string, invoice: PurchaseForm) => invoke<PurchaseSummary>("correct_purchase_invoice", { id, invoice }),
   updatePurchaseDetails: (id: string, description: string, supplierReference: string | null, dueDate: string | null) =>
     invoke<PurchaseSummary>("update_purchase_details", { id, description, supplierReference, dueDate }),

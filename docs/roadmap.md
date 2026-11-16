@@ -47,5 +47,10 @@ in parallel with a spreadsheet for at least one VAT period.
   moving to another PC (see `docs/backup.md`). **Not yet:** backup encryption, configurable data folder.
 - **Phase 7** also: auto-update via signed GitHub Releases (check at start, install after a click and a
   verified backup; a database from a newer version is refused). See `docs/releasing.md`.
-- **Next:** year-end closing, then phase 5 (UBL import, local OCR, recurring-expense detection) and
+- **Phase 5** (partly): purchase-invoice proposals from the uploaded document. UBL e-invoices are read
+  exactly; PDFs and photos via the Windows OCR engine (`app/src-tauri/src/ocr.rs`) and text rules
+  (`boekhoud-import/src/invoice.rs`). Supplier matched by VAT number, KvK number or name; only empty
+  fields are filled and nothing is booked. **Not yet:** confidence per field, logging of runs,
+  multi-rate line split, recurring-expense detection.
+- **Next:** year-end closing, then the rest of phase 5 (recurring-expense detection) and
   phase 7 items (XAF export, backup encryption, code signing).

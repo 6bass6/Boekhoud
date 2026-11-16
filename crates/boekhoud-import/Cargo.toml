@@ -1,6 +1,6 @@
 [package]
 name = "boekhoud-import"
-description = "Parsers for external files: Apple/Google reports, CAMT.053 and CSV bank statements"
+description = "Parsers for external files: Apple/Google reports, CAMT.053 and CSV bank statements, invoice proposals"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,3 +14,4 @@ thiserror.workspace = true
 csv = "1"
 quick-xml = "0.38"
 encoding_rs = "0.8"
+regex = "1"

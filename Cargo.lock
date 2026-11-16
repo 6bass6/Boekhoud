@@ -183,6 +183,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-process",
  "tauri-plugin-updater",
+ "windows",
 ]
 
 [[package]]
@@ -222,6 +223,7 @@ dependencies = [
  "csv",
  "encoding_rs",
  "quick-xml 0.38.4",
+ "regex",
  "serde",
  "thiserror 2.0.21",
 ]

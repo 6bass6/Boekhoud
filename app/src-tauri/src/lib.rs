@@ -4,10 +4,12 @@
 
 mod backup;
 mod bank;
+mod extract;
 mod format;
 mod income_tax;
 mod invoicing;
 mod messages;
+mod ocr;
 mod platforms;
 mod tax;
 
@@ -403,6 +405,7 @@ pub fn run() {
             invoicing::open_sales_invoice_pdf,
             invoicing::register_purchase_invoice,
             invoicing::correct_purchase_invoice,
+            extract::extract_purchase,
             invoicing::update_purchase_details,
             invoicing::purchase_invoices,
             invoicing::purchase_invoice,

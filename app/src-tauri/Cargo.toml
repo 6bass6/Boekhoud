@@ -25,3 +25,15 @@ serde_json.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+
+# Local OCR (Windows.Media.Ocr) and PDF rendering (Windows.Data.Pdf) for invoice proposals.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Data_Pdf",
+    "Foundation",
+    "Foundation_Collections",
+    "Globalization",
+    "Graphics_Imaging",
+    "Media_Ocr",
+    "Storage_Streams",
+] }

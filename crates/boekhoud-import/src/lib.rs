@@ -4,6 +4,7 @@
 pub mod apple;
 pub mod bank;
 pub mod google;
+pub mod invoice;
 mod text;
 
 use thiserror::Error;

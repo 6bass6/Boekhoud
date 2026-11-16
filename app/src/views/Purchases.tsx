@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { api, type DocumentInfo, type PurchaseDetail, type PurchaseForm, type PurchaseLineForm, type PurchaseSummary } from "../api";
+import { api, type DocumentInfo, type PurchaseDetail, type PurchaseForm, type PurchaseLineForm, type PurchaseSuggestion, type PurchaseSummary } from "../api";
 import { DocumentTabs, DocumentUpload } from "../components/DocumentViewer";
 import { useLoad } from "../hooks";
 import { centsToInput, formatDate, formatEuro, parseCents, todayIso, vatFor } from "../money";
 import { ContactForm, emptyContact } from "./Contacts";
+import type { Contact } from "../api";
 
 const stateLabel: Record<PurchaseSummary["state"], string> = {
   open: "Open", paid: "Betaald", paid_privately: "Privé betaald", reversed: "Tegengeboekt", corrected: "Gecorrigeerd",
@@ -161,8 +162,10 @@ function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) =>
   const taxCodes = useLoad(() => api.taxCodes(form.invoice_date || todayIso()), [form.invoice_date]);
   const regime = useLoad(() => api.vatRegime(form.invoice_date || todayIso()), [form.invoice_date]);
   const [docs, setDocs] = useState<DocumentInfo[]>(correcting?.documents ?? []);
-  const [newContact, setNewContact] = useState(false);
+  const [newContact, setNewContact] = useState<Partial<Contact> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+  const [readResult, setReadResult] = useState<{ file: string; source: string; filled: string[]; supplier: PurchaseSuggestion | null } | null>(null);
 
   const purchaseCodes = (taxCodes.data ?? []).filter((t) => t.kind !== "sales");
   const setLine = (i: number, patch: Partial<PurchaseLineForm>) =>
@@ -185,6 +188,38 @@ function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) =>
       lines: f.lines.map((l, i) => i === 0 && !l.account ? { ...l, account: c?.default_account ?? "", tax_code: c?.default_tax_code ?? l.tax_code } : l),
     }));
   };
+  /** Fill empty fields from the document; never overwrite what was typed, never book anything. */
+  const readDocument = (doc: DocumentInfo) => {
+    setReading(true);
+    setError(null);
+    api.extractPurchase(doc.id).then((s) => {
+      const filled: string[] = [];
+      const contact = s.contact_id ? contacts.data?.find((c) => c.id === s.contact_id) : undefined;
+      const f = form;
+      const next = { ...f, lines: [...f.lines] };
+      {
+        if (!f.contact_id && contact) { next.contact_id = contact.id; filled.push("leverancier"); }
+        if (!f.supplier_reference && s.supplier_reference) { next.supplier_reference = s.supplier_reference; filled.push("factuurnummer"); }
+        if (s.invoice_date && f.invoice_date === todayIso() && s.invoice_date !== f.invoice_date) { next.invoice_date = s.invoice_date; filled.push("factuurdatum"); }
+        if (!f.due_date && s.due_date) { next.due_date = s.due_date; filled.push("vervaldatum"); }
+        const first = next.lines[0];
+        if (next.lines.length === 1 && first && !first.net.trim() && s.net_cents !== null) {
+          next.lines[0] = {
+            ...first,
+            net: centsToInput(s.net_cents),
+            vat: s.vat_cents !== null ? centsToInput(s.vat_cents) : first.vat,
+            tax_code: s.tax_code ?? contact?.default_tax_code ?? first.tax_code,
+            account: first.account || s.account || contact?.default_account || "",
+          };
+          filled.push("bedragen");
+        }
+      }
+      setForm(next);
+      const unknownSupplier = !s.contact_id && (s.supplier_name || s.supplier_vat || s.supplier_kvk) ? s : null;
+      setReadResult({ file: doc.original_filename, source: s.source, filled, supplier: unknownSupplier });
+    }).catch((e) => setError(String(e))).finally(() => setReading(false));
+  };
+
   const save = () => {
     const invoice = { ...form, document_ids: docs.map((x) => x.id) };
     (correcting ? api.correctPurchase(correcting.summary.id, invoice) : api.registerPurchase(invoice))
@@ -200,6 +235,26 @@ function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) =>
         </header>
         {correcting && <p className="muted small">Pas aan wat niet klopt. Bij opslaan wordt de oude boeking tegengeboekt (op de oude factuurdatum) en de
           gecorrigeerde factuur opnieuw geboekt. De oude versie blijft zichtbaar als "Gecorrigeerd".</p>}
+        {reading && <p className="muted small">Gegevens uit het bestand lezen…</p>}
+        {readResult && (
+          <div className="box small">
+            {readResult.filled.length > 0
+              ? <>Ingevuld uit <strong>{readResult.file}</strong>: {readResult.filled.join(", ")}.{" "}
+                  {readResult.source === "ubl" ? "Uit de e-factuur gelezen." : <strong>Automatisch herkend: controleer alles voordat je boekt.</strong>}</>
+              : <>Uit <strong>{readResult.file}</strong> kon niets nieuws worden ingevuld; velden die al gevuld waren zijn niet aangepast.</>}
+            {readResult.supplier && (
+              <div className="row gap" style={{ marginTop: 6 }}>
+                <span>Leverancier niet gevonden: {[readResult.supplier.supplier_name, readResult.supplier.supplier_vat, readResult.supplier.supplier_kvk && `KvK ${readResult.supplier.supplier_kvk}`].filter(Boolean).join(" · ")}</span>
+                <button onClick={() => setNewContact({
+                  name: readResult.supplier?.supplier_name ?? "",
+                  vat_number: readResult.supplier?.supplier_vat ?? null,
+                  kvk_number: readResult.supplier?.supplier_kvk ?? null,
+                  country: readResult.supplier?.supplier_vat?.slice(0, 2) || "NL",
+                })}>Toevoegen als leverancier…</button>
+              </div>
+            )}
+          </div>
+        )}
         <div className="form-grid">
           <label className="wide">Leverancier
             <span className="row gap">
@@ -207,7 +262,7 @@ function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) =>
                 <option value="">— kies leverancier —</option>
                 {(contacts.data ?? []).filter((c) => c.is_supplier || c.id === form.contact_id).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-              <button onClick={() => setNewContact(true)}>Nieuw…</button>
+              <button onClick={() => setNewContact({})}>Nieuw…</button>
             </span>
           </label>
           <label>Factuurdatum <input type="date" value={form.invoice_date} onChange={(e) => setForm({ ...form, invoice_date: e.target.value })} /></label>
@@ -216,8 +271,8 @@ function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) =>
           <label className="wide">Omschrijving <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
         </div>
         {newContact && (
-          <ContactForm initial={{ ...emptyContact(), is_customer: false, is_supplier: true }} onCancel={() => setNewContact(false)}
-            onSaved={(id) => { setNewContact(false); contacts.reload(); pickContact(id); }} />
+          <ContactForm initial={{ ...emptyContact(), is_customer: false, is_supplier: true, ...newContact }} onCancel={() => setNewContact(null)}
+            onSaved={(id) => { setNewContact(null); setReadResult((r) => r && { ...r, supplier: null }); contacts.reload(); pickContact(id); }} />
         )}
         {regime.data === "kor" && <p className="muted small">Onder de KOR is btw niet aftrekbaar: boek het bedrag inclusief btw met code GEEN.</p>}
         <table className="entry-lines">
@@ -258,7 +313,16 @@ function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) =>
         <h3>Bewijsstukken</h3>
         {docs.length === 0 && <p className="muted small">Voeg de factuur, bon of andere stukken toe (PDF of foto, meerdere tegelijk mogelijk); je ziet ze hier naast de gegevens.</p>}
         <DocumentUpload type="purchase_invoice" multiple label={docs.length ? "Meer bestanden…" : "Bestanden kiezen…"}
-          onUploaded={(added) => setDocs((cur) => [...cur, ...added.filter((a) => !cur.some((c) => c.id === a.id))])} />
+          onUploaded={(added) => {
+            // The first file of a new invoice is read automatically; later files only on request.
+            if (docs.length === 0 && !correcting && added[0]) readDocument(added[0]);
+            setDocs((cur) => [...cur, ...added.filter((a) => !cur.some((c) => c.id === a.id))]);
+          }} />
+        {docs.length > 0 && (
+          <button disabled={reading} onClick={() => readDocument(docs[0])} title="Vult alleen lege velden in; je controleert alles voordat je boekt">
+            Gegevens uit bestand lezen
+          </button>
+        )}
         <DocumentTabs docs={docs} height={560} onRemove={(rid) => setDocs((cur) => cur.filter((c) => c.id !== rid))} />
       </aside>
     </section>
