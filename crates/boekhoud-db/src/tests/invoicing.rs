@@ -452,10 +452,11 @@ fn purchase_details_can_be_edited_without_touching_the_booking() {
 fn migration_keeps_existing_purchase_documents() {
     use crate::migrations::MIGRATIONS;
     let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
     for (_, sql) in &MIGRATIONS[..8] {
         conn.execute_batch(sql).unwrap();
     }
-    // Foreign keys are off on a raw connection, so minimal rows suffice.
+    // Foreign keys are switched off above, so minimal rows suffice.
     conn.execute_batch(
         "INSERT INTO document (id, sha256, original_filename, mime_type, size_bytes, document_type, retention_until)
              VALUES ('doc1', 'abc', 'bon.pdf', 'application/pdf', 3, 'purchase_invoice', '2033-12-31');
