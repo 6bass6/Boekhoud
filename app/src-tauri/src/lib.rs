@@ -408,6 +408,7 @@ pub fn run() {
             extract::extract_purchase,
             invoicing::update_purchase_details,
             invoicing::purchase_invoices,
+            invoicing::purchase_accounts,
             invoicing::purchase_invoice,
             invoicing::attach_purchase_documents,
             invoicing::register_purchase_payment,

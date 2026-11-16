@@ -483,6 +483,12 @@ pub fn update_purchase_details(
     with_ledger(&state, |l| l.update_purchase_details(&id, &details))
 }
 
+/// Accounts offered as "Kostenrekening" on a purchase invoice.
+#[tauri::command]
+pub fn purchase_accounts(state: State<AppState>) -> CmdResult<Vec<boekhoud_core::Account>> {
+    with_ledger(&state, |l| l.purchase_accounts())
+}
+
 #[tauri::command]
 pub fn purchase_invoices(state: State<AppState>, year: Option<i32>) -> CmdResult<Vec<PurchaseInvoiceSummary>> {
     with_ledger(&state, |l| l.purchase_invoices(year))

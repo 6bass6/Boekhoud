@@ -281,6 +281,26 @@ fn register_in_tx(tx: &Connection, actor: &str, input: &PurchaseInput, corrects:
         .map(str::trim)
         .filter(|r| !r.is_empty());
     check_duplicate_reference(tx, &input.contact_id, reference, None)?;
+    for (i, l) in input.lines.iter().enumerate() {
+        let account: Option<(String, bool)> = tx
+            .query_row(
+                "SELECT name, purchase_allowed FROM account WHERE number = ?1",
+                [&l.account],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        match account {
+            Some((_, true)) => {}
+            Some((name, false)) => {
+                return Err(DbError::Invalid(format!(
+                    "regel {}: {} {name} is geen kostenrekening; kies een kostenrekening (of een bedrijfsmiddel)",
+                    i + 1,
+                    l.account
+                )))
+            }
+            None => return Err(DbError::Invalid(format!("regel {}: kies een kostenrekening", i + 1))),
+        }
+    }
     let rules = vat_rules_on(tx, input.invoice_date)?;
     let (net, vat, total) = purchase_totals(&input.lines, &rules).map_err(|e| DbError::Invalid(e.to_string()))?;
     let credit_account = if input.paid_privately {
@@ -457,6 +477,24 @@ impl Ledger {
         let s = summary(&tx, id)?;
         tx.commit()?;
         Ok(s)
+    }
+
+    /// Active accounts a purchase line may be booked on (costs and business assets).
+    pub fn purchase_accounts(&self) -> Result<Vec<boekhoud_core::Account>> {
+        Ok(self
+            .accounts()?
+            .into_iter()
+            .filter(|a| a.active)
+            .filter(|a| {
+                self.conn
+                    .query_row(
+                        "SELECT purchase_allowed FROM account WHERE number = ?1",
+                        [&a.number],
+                        |r| r.get::<_, bool>(0),
+                    )
+                    .unwrap_or(false)
+            })
+            .collect())
     }
 
     pub fn purchase_invoices(&self, year: Option<i32>) -> Result<Vec<PurchaseInvoiceSummary>> {

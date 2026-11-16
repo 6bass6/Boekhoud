@@ -143,7 +143,7 @@ const emptyLine = (code: string): PurchaseLineForm => ({ description: null, acco
 
 function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) => void; correcting?: PurchaseDetail | null }) {
   const contacts = useLoad(() => api.contacts(), []);
-  const accounts = useLoad(() => api.accounts(), []);
+  const accounts = useLoad(() => api.purchaseAccounts(), []);
   const [form, setForm] = useState<PurchaseForm>(() => correcting ? {
     contact_id: correcting.summary.contact_id,
     supplier_reference: correcting.summary.supplier_reference,
@@ -283,7 +283,12 @@ function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) =>
                 <td>
                   <select value={l.account} onChange={(e) => setLine(i, { account: e.target.value })}>
                     <option value="">— kies —</option>
-                    {(accounts.data ?? []).filter((a) => a.active && !["revenue"].includes(a.account_type)).map((a) => <option key={a.number} value={a.number}>{a.number} {a.name}</option>)}
+                    {(accounts.data ?? []).filter((a) => a.account_type === "expense").map((a) => <option key={a.number} value={a.number}>{a.number} {a.name}</option>)}
+                    <optgroup label="Bedrijfsmiddelen (afschrijven via Activa)">
+                      {(accounts.data ?? []).filter((a) => a.account_type !== "expense").map((a) => <option key={a.number} value={a.number}>{a.number} {a.name}</option>)}
+                    </optgroup>
+                    {l.account && accounts.data && !accounts.data.some((a) => a.number === l.account) &&
+                      <option value={l.account}>{l.account} — geen kostenrekening, kies een andere</option>}
                   </select>
                 </td>
                 <td>

@@ -462,6 +462,7 @@ export const api = {
   correctPurchase: (id: string, invoice: PurchaseForm) => invoke<PurchaseSummary>("correct_purchase_invoice", { id, invoice }),
   updatePurchaseDetails: (id: string, description: string, supplierReference: string | null, dueDate: string | null) =>
     invoke<PurchaseSummary>("update_purchase_details", { id, description, supplierReference, dueDate }),
+  purchaseAccounts: () => invoke<Account[]>("purchase_accounts"),
   purchaseInvoices: (year: number | null) => invoke<PurchaseSummary[]>("purchase_invoices", { year }),
   purchaseInvoice: (id: string) => invoke<PurchaseDetail>("purchase_invoice", { id }),
   attachPurchaseDocuments: (id: string, documentIds: string[]) => invoke<void>("attach_purchase_documents", { id, documentIds }),

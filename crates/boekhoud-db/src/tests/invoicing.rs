@@ -199,6 +199,45 @@ fn purchase_invoice_posts_and_detects_duplicates() {
 }
 
 #[test]
+fn purchase_lines_only_accept_cost_and_asset_accounts() {
+    let mut l = Ledger::open_in_memory().unwrap();
+    let s = supplier(&mut l);
+    let allowed: Vec<String> = l.purchase_accounts().unwrap().into_iter().map(|a| a.number).collect();
+    assert!(allowed.contains(&"4000".to_string()) && allowed.contains(&"0100".to_string()));
+    for not_a_cost in ["1600", "1300", "1500", "0510", "8100", "4800"] {
+        assert!(!allowed.contains(&not_a_cost.to_string()), "{not_a_cost}");
+    }
+    // Booking a purchase on Crediteuren kept the cost out of the P&L; it is refused now.
+    let input = PurchaseInput {
+        contact_id: s,
+        supplier_reference: None,
+        invoice_date: d(2026, 11, 14),
+        due_date: None,
+        description: "Uittreksel".into(),
+        lines: vec![PurchaseLine {
+            description: None,
+            account: "1600".into(),
+            net_cents: 960,
+            tax_code: "GEEN".into(),
+            vat_cents: 0,
+        }],
+        paid_privately: true,
+        document_ids: vec![],
+    };
+    assert!(matches!(l.register_purchase_invoice(&input), Err(DbError::Invalid(_))));
+    let ok = PurchaseInput {
+        lines: vec![PurchaseLine {
+            account: "4900".into(),
+            ..input.lines[0].clone()
+        }],
+        ..input.clone()
+    };
+    l.register_purchase_invoice(&ok).unwrap();
+    let pl = l.profit_and_loss(d(2026, 12, 31)).unwrap();
+    assert_eq!((pl.expenses_cents, pl.result_cents), (960, -960));
+}
+
+#[test]
 fn purchase_invoice_holds_several_documents() {
     let (mut l, dir) = ledger_with_docs();
     let s = supplier(&mut l);

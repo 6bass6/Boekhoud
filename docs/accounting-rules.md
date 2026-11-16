@@ -265,6 +265,9 @@ onder de KOR. **[TOETSEN: inkoop met verlegde btw onder de KOR heeft eigen codes
 - **Inkoopfacturen:** btw-bedrag van de factuur wordt overgenomen (voorstel = tarief × netto).
   Verlegde btw (IEU/INEU): D 1500 en C 1515 met dezelfde code; aan de leverancier is alleen netto
   verschuldigd. "Privé betaald" boekt de tegenrekening op 0510 in plaats van 1600.
+  Een inkoopregel mag alleen op een kostenrekening of een bedrijfsmiddel (0100) staan
+  (`account.purchase_allowed`, migratie 0011); balansrekeningen zoals 1600 Crediteuren, btw, bank,
+  eigen vermogen en omzet worden geweigerd, net als 4800/9000/9100 die de app zelf boekt.
 - **Platformen:** per rapport één boeking op de laatste dag van de rapportperiode; per valuta het
   euro-bedrag uit Apple Payments (Google rapporteert al in euro). De uitbetaling via de bank vereffent
   1310/1320; een verschil gaat naar 9000 Koersverschillen.
