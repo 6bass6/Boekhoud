@@ -257,8 +257,10 @@ export interface PurchaseSummary {
   total_cents: number;
   open_cents: number;
   has_document: boolean;
-  state: "open" | "paid" | "paid_privately" | "reversed";
+  state: "open" | "paid" | "paid_privately" | "reversed" | "corrected";
   entry_id: string;
+  corrects_id: string | null;
+  corrected_by_id: string | null;
 }
 export interface PurchaseDetail {
   summary: PurchaseSummary;
@@ -438,6 +440,9 @@ export const api = {
   openSalesInvoicePdf: (id: string) => invoke<void>("open_sales_invoice_pdf", { id }),
 
   registerPurchase: (invoice: PurchaseForm) => invoke<PurchaseSummary>("register_purchase_invoice", { invoice }),
+  correctPurchase: (id: string, invoice: PurchaseForm) => invoke<PurchaseSummary>("correct_purchase_invoice", { id, invoice }),
+  updatePurchaseDetails: (id: string, description: string, supplierReference: string | null, dueDate: string | null) =>
+    invoke<PurchaseSummary>("update_purchase_details", { id, description, supplierReference, dueDate }),
   purchaseInvoices: (year: number | null) => invoke<PurchaseSummary[]>("purchase_invoices", { year }),
   purchaseInvoice: (id: string) => invoke<PurchaseDetail>("purchase_invoice", { id }),
   attachPurchaseDocuments: (id: string, documentIds: string[]) => invoke<void>("attach_purchase_documents", { id, documentIds }),

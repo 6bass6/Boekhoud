@@ -1,6 +1,6 @@
 //! Purchase invoices (received): registered and posted in one step, with any number of documents.
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,7 @@ use crate::contacts::contact_by_id;
 use crate::documents::DocumentInfo;
 use crate::sales::{payments_for, record_payment, PaymentView};
 use crate::tax::{iso, vat_rules_on};
-use crate::{audit, post_in_tx, DbError, Ledger, Result};
+use crate::{audit, post_in_tx, reverse_in_tx, DbError, Ledger, Result};
 
 pub const PAYABLE_ACCOUNT: &str = "1600";
 pub const PRIVATE_CONTRIBUTION_ACCOUNT: &str = "0510";
@@ -43,9 +43,21 @@ pub struct PurchaseInvoiceSummary {
     pub total_cents: i64,
     pub open_cents: i64,
     pub has_document: bool,
-    /// open | paid | paid_privately | reversed
+    /// open | paid | paid_privately | reversed | corrected
     pub state: String,
     pub entry_id: String,
+    /// The invoice this one corrects (replaces).
+    pub corrects_id: Option<String>,
+    /// The invoice that replaced this one.
+    pub corrected_by_id: Option<String>,
+}
+
+/// Details that can change after registration because they are not part of the booked amounts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PurchaseDetails {
+    pub description: String,
+    pub supplier_reference: Option<String>,
+    pub due_date: Option<NaiveDate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -102,21 +114,26 @@ fn link_documents(conn: &Connection, invoice_id: &str, ids: &[String]) -> Result
         if !exists {
             return Err(DbError::NotFound(format!("document {id}")));
         }
-        let owner: Option<String> = conn
-            .query_row(
-                "SELECT purchase_invoice_id FROM purchase_invoice_document WHERE document_id = ?1",
-                [id],
-                |r| r.get(0),
-            )
-            .optional()?;
-        match owner {
-            Some(o) if o == invoice_id => continue,
-            Some(_) => {
-                return Err(DbError::Invalid(
-                    "dit document hoort al bij een andere inkoopfactuur".into(),
-                ))
-            }
-            None => {}
+        let here: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM purchase_invoice_document WHERE document_id = ?1 AND purchase_invoice_id = ?2)",
+            params![id, invoice_id],
+            |r| r.get(0),
+        )?;
+        if here {
+            continue;
+        }
+        // Linked to another invoice that still counts (not reversed or corrected)?
+        let elsewhere: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM purchase_invoice_document l JOIN purchase_invoice p ON p.id = l.purchase_invoice_id
+               WHERE l.document_id = ?1 AND l.purchase_invoice_id <> ?2
+                 AND NOT EXISTS (SELECT 1 FROM journal_entry r WHERE r.reverses_entry_id = p.entry_id))",
+            params![id, invoice_id],
+            |r| r.get(0),
+        )?;
+        if elsewhere {
+            return Err(DbError::Invalid(
+                "dit document hoort al bij een andere inkoopfactuur".into(),
+            ));
         }
         position += 1;
         conn.execute(
@@ -159,7 +176,9 @@ fn summary(conn: &Connection, id: &str) -> Result<PurchaseInvoiceSummary> {
                     p.total_cents,
                     EXISTS(SELECT 1 FROM purchase_invoice_document d WHERE d.purchase_invoice_id = p.id),
                     p.paid_privately, p.entry_id,
-                    EXISTS(SELECT 1 FROM journal_entry r WHERE r.reverses_entry_id = p.entry_id)
+                    EXISTS(SELECT 1 FROM journal_entry r WHERE r.reverses_entry_id = p.entry_id),
+                    p.corrects_invoice_id,
+                    (SELECT n.id FROM purchase_invoice n WHERE n.corrects_invoice_id = p.id)
              FROM purchase_invoice p JOIN contact c ON c.id = p.contact_id WHERE p.id = ?1",
             [id],
             |r| {
@@ -176,6 +195,8 @@ fn summary(conn: &Connection, id: &str) -> Result<PurchaseInvoiceSummary> {
                     r.get::<_, bool>(9)?,
                     r.get::<_, String>(10)?,
                     r.get::<_, bool>(11)?,
+                    r.get::<_, Option<String>>(12)?,
+                    r.get::<_, Option<String>>(13)?,
                 ))
             },
         )
@@ -194,9 +215,13 @@ fn summary(conn: &Connection, id: &str) -> Result<PurchaseInvoiceSummary> {
         private,
         entry_id,
         reversed,
+        corrects_id,
+        corrected_by_id,
     ) = row;
     let open = purchase_open_cents(conn, &id)?;
-    let state = if reversed {
+    let state = if corrected_by_id.is_some() {
+        "corrected"
+    } else if reversed {
         "reversed"
     } else if private {
         "paid_privately"
@@ -218,95 +243,218 @@ fn summary(conn: &Connection, id: &str) -> Result<PurchaseInvoiceSummary> {
         has_document: has_doc,
         state: state.into(),
         entry_id,
+        corrects_id,
+        corrected_by_id,
     })
+}
+
+fn check_duplicate_reference(
+    conn: &Connection,
+    contact_id: &str,
+    reference: Option<&str>,
+    except_id: Option<&str>,
+) -> Result<()> {
+    let Some(r) = reference else { return Ok(()) };
+    let dup: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM purchase_invoice p WHERE contact_id = ?1 AND supplier_reference = ?2
+           AND (?3 IS NULL OR id <> ?3)
+           AND NOT EXISTS (SELECT 1 FROM journal_entry r WHERE r.reverses_entry_id = p.entry_id))",
+        params![contact_id, r, except_id],
+        |row| row.get(0),
+    )?;
+    if dup {
+        let name: String = conn.query_row("SELECT name FROM contact WHERE id = ?1", [contact_id], |row| row.get(0))?;
+        return Err(DbError::Invalid(format!("factuur {r} van {name} is al geregistreerd")));
+    }
+    Ok(())
+}
+
+/// Register and post a purchase invoice inside the caller's transaction; returns its id.
+fn register_in_tx(tx: &Connection, actor: &str, input: &PurchaseInput, corrects: Option<&str>) -> Result<String> {
+    if input.description.trim().is_empty() {
+        return Err(DbError::Invalid("omschrijving ontbreekt".into()));
+    }
+    let contact = contact_by_id(tx, &input.contact_id)?;
+    let reference = input
+        .supplier_reference
+        .as_deref()
+        .map(str::trim)
+        .filter(|r| !r.is_empty());
+    check_duplicate_reference(tx, &input.contact_id, reference, None)?;
+    let rules = vat_rules_on(tx, input.invoice_date)?;
+    let (net, vat, total) = purchase_totals(&input.lines, &rules).map_err(|e| DbError::Invalid(e.to_string()))?;
+    let credit_account = if input.paid_privately {
+        PRIVATE_CONTRIBUTION_ACCOUNT
+    } else {
+        PAYABLE_ACCOUNT
+    };
+    let lines =
+        purchase_entry_lines(&input.lines, &rules, credit_account).map_err(|e| DbError::Invalid(e.to_string()))?;
+    let id = uuid::Uuid::now_v7().to_string();
+    let draft = EntryDraft {
+        journal: JournalCode::INK,
+        date: input.invoice_date,
+        description: format!("{} — {}", contact.name, input.description.trim()),
+        lines,
+        source: Source {
+            kind: "purchase_invoice".into(),
+            reference: Some(id.clone()),
+        },
+        idempotency_key: Some(format!("purchase_invoice:{id}")),
+    };
+    let posted = post_in_tx(tx, actor, &draft, None)?;
+    tx.execute(
+        "INSERT INTO purchase_invoice (id, contact_id, supplier_reference, invoice_date, due_date, description,
+             subtotal_cents, vat_cents, total_cents, paid_privately, entry_id, corrects_invoice_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        params![
+            id,
+            input.contact_id,
+            reference,
+            iso(input.invoice_date),
+            input.due_date.map(iso),
+            input.description.trim(),
+            net,
+            vat,
+            total,
+            input.paid_privately,
+            posted.id,
+            corrects
+        ],
+    )?;
+    link_documents(tx, &id, &input.document_ids)?;
+    for (i, l) in input.lines.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO purchase_invoice_line (invoice_id, line_no, description, account, net_cents, tax_code, vat_cents)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, (i + 1) as i64, l.description, l.account, l.net_cents, l.tax_code, l.vat_cents],
+        )?;
+    }
+    audit(
+        tx,
+        actor,
+        "register",
+        "purchase_invoice",
+        &id,
+        None::<&()>,
+        Some(input),
+        Some(&posted.id),
+    )?;
+    Ok(id)
 }
 
 impl Ledger {
     /// Register and post a purchase invoice (INK journal).
     pub fn register_purchase_invoice(&mut self, input: &PurchaseInput) -> Result<PurchaseInvoiceSummary> {
-        if input.description.trim().is_empty() {
-            return Err(DbError::Invalid("omschrijving ontbreekt".into()));
-        }
         let actor = self.actor.clone();
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let contact = contact_by_id(&tx, &input.contact_id)?;
-        let reference = input
+        let id = register_in_tx(&tx, &actor, input, None)?;
+        let s = summary(&tx, &id)?;
+        tx.commit()?;
+        Ok(s)
+    }
+
+    /// Correct a registered purchase invoice: reverse its entry (on its own date, so the VAT
+    /// correction lands in the same quarter) and register `input` as a new invoice that replaces it.
+    /// Refused when payments are booked on it or a period involved is closed (e.g. VAT return filed).
+    pub fn correct_purchase_invoice(&mut self, id: &str, input: &PurchaseInput) -> Result<PurchaseInvoiceSummary> {
+        let actor = self.actor.clone();
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let old = summary(&tx, id)?;
+        if matches!(old.state.as_str(), "reversed" | "corrected") {
+            return Err(DbError::Invalid(
+                "deze inkoopfactuur is al tegengeboekt of gecorrigeerd".into(),
+            ));
+        }
+        let payments: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM payment p WHERE purchase_invoice_id = ?1
+               AND NOT EXISTS (SELECT 1 FROM journal_entry r WHERE r.reverses_entry_id = p.entry_id))",
+            [id],
+            |r| r.get(0),
+        )?;
+        if payments {
+            return Err(DbError::Invalid(
+                "er is al een betaling op deze inkoopfactuur geboekt; boek die eerst terug en corrigeer daarna".into(),
+            ));
+        }
+        for date in [old.invoice_date, input.invoice_date] {
+            let closed: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM period WHERE year = ?1 AND month = ?2 AND status = 'closed')",
+                params![date.year(), date.month()],
+                |r| r.get(0),
+            )?;
+            if closed {
+                return Err(DbError::Invalid(format!(
+                    "de periode {}-{:02} is afgesloten (bijvoorbeeld na de btw-aangifte); corrigeren kan daar niet meer",
+                    date.year(),
+                    date.month()
+                )));
+            }
+        }
+        reverse_in_tx(
+            &tx,
+            &actor,
+            &old.entry_id,
+            old.invoice_date,
+            "inkoopfactuur gecorrigeerd",
+        )?;
+        let new_id = register_in_tx(&tx, &actor, input, Some(id))?;
+        audit(
+            &tx,
+            &actor,
+            "correct",
+            "purchase_invoice",
+            id,
+            Some(&old),
+            Some(&new_id),
+            None,
+        )?;
+        let s = summary(&tx, &new_id)?;
+        tx.commit()?;
+        Ok(s)
+    }
+
+    /// Change description, supplier's invoice number and due date. The booked amounts, date, supplier
+    /// and journal entry stay as they are.
+    pub fn update_purchase_details(&mut self, id: &str, details: &PurchaseDetails) -> Result<PurchaseInvoiceSummary> {
+        let description = details.description.trim();
+        if description.is_empty() {
+            return Err(DbError::Invalid("omschrijving ontbreekt".into()));
+        }
+        let reference = details
             .supplier_reference
             .as_deref()
             .map(str::trim)
             .filter(|r| !r.is_empty());
-        if let Some(r) = reference {
-            let dup: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM purchase_invoice WHERE contact_id = ?1 AND supplier_reference = ?2)",
-                params![input.contact_id, r],
-                |row| row.get(0),
-            )?;
-            if dup {
-                return Err(DbError::Invalid(format!(
-                    "factuur {r} van {} is al geregistreerd",
-                    contact.name
-                )));
-            }
+        let actor = self.actor.clone();
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let old = summary(&tx, id)?;
+        if matches!(old.state.as_str(), "reversed" | "corrected") {
+            return Err(DbError::Invalid(
+                "een tegengeboekte of gecorrigeerde inkoopfactuur kan niet meer worden gewijzigd".into(),
+            ));
         }
-        let rules = vat_rules_on(&tx, input.invoice_date)?;
-        let (net, vat, total) = purchase_totals(&input.lines, &rules).map_err(|e| DbError::Invalid(e.to_string()))?;
-        let credit_account = if input.paid_privately {
-            PRIVATE_CONTRIBUTION_ACCOUNT
-        } else {
-            PAYABLE_ACCOUNT
-        };
-        let lines =
-            purchase_entry_lines(&input.lines, &rules, credit_account).map_err(|e| DbError::Invalid(e.to_string()))?;
-        let id = uuid::Uuid::now_v7().to_string();
-        let draft = EntryDraft {
-            journal: JournalCode::INK,
-            date: input.invoice_date,
-            description: format!("{} — {}", contact.name, input.description.trim()),
-            lines,
-            source: Source {
-                kind: "purchase_invoice".into(),
-                reference: Some(id.clone()),
-            },
-            idempotency_key: Some(format!("purchase_invoice:{id}")),
-        };
-        let posted = post_in_tx(&tx, &actor, &draft, None)?;
+        check_duplicate_reference(&tx, &old.contact_id, reference, Some(id))?;
         tx.execute(
-            "INSERT INTO purchase_invoice (id, contact_id, supplier_reference, invoice_date, due_date, description,
-                 subtotal_cents, vat_cents, total_cents, paid_privately, entry_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![
-                id,
-                input.contact_id,
-                reference,
-                iso(input.invoice_date),
-                input.due_date.map(iso),
-                input.description.trim(),
-                net,
-                vat,
-                total,
-                input.paid_privately,
-                posted.id
-            ],
+            "UPDATE purchase_invoice SET description = ?2, supplier_reference = ?3, due_date = ?4 WHERE id = ?1",
+            params![id, description, reference, details.due_date.map(iso)],
         )?;
-        link_documents(&tx, &id, &input.document_ids)?;
-        for (i, l) in input.lines.iter().enumerate() {
-            tx.execute(
-                "INSERT INTO purchase_invoice_line (invoice_id, line_no, description, account, net_cents, tax_code, vat_cents)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![id, (i + 1) as i64, l.description, l.account, l.net_cents, l.tax_code, l.vat_cents],
-            )?;
-        }
+        let before = PurchaseDetails {
+            description: old.description,
+            supplier_reference: old.supplier_reference,
+            due_date: old.due_date,
+        };
         audit(
             &tx,
             &actor,
-            "register",
+            "update_details",
             "purchase_invoice",
-            &id,
-            None::<&()>,
-            Some(input),
-            Some(&posted.id),
+            id,
+            Some(&before),
+            Some(details),
+            None,
         )?;
-        let s = summary(&tx, &id)?;
+        let s = summary(&tx, id)?;
         tx.commit()?;
         Ok(s)
     }

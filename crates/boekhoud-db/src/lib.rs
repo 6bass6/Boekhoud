@@ -45,7 +45,7 @@ pub use migrations::MIGRATIONS;
 pub use platforms::{
     CurrencyAmount, EurAmount, PlatformConfig, PlatformReportInput, PlatformReportView, ProductAmount, ProductRevenue,
 };
-pub use purchases::{PurchaseInput, PurchaseInvoiceDetail, PurchaseInvoiceSummary};
+pub use purchases::{PurchaseDetails, PurchaseInput, PurchaseInvoiceDetail, PurchaseInvoiceSummary};
 pub use queries::{Dashboard, EntryDetail, EntrySummary, LedgerCard, LedgerCardRow, LineView, PeriodView};
 pub use reports::{
     balance_sheet_csv, csv_amount, profit_and_loss_csv, trial_balance_csv, BalanceSheet, ProfitAndLoss, ReportLine,
@@ -205,61 +205,15 @@ impl Ledger {
 
     /// Fully reverse a posted entry with a new entry dated `date`.
     pub fn reverse(&mut self, entry_id: &str, date: NaiveDate, reason: &str) -> Result<PostedEntry> {
-        let (journal, year, sequence, status): (String, i32, Option<i64>, String) = self
-            .conn
-            .query_row(
-                "SELECT journal, fiscal_year, sequence, status FROM journal_entry WHERE id = ?1",
-                [entry_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-            )
-            .optional()?
-            .ok_or_else(|| DbError::NotFound(entry_id.to_string()))?;
-        if status != "posted" {
-            return Err(DbError::NotFound(format!("posted entry {entry_id}")));
-        }
-        let already: bool = self.conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM journal_entry WHERE reverses_entry_id = ?1)",
-            [entry_id],
-            |r| r.get(0),
-        )?;
-        if already {
-            return Err(DbError::AlreadyReversed(entry_id.to_string()));
-        }
-        let journal =
-            JournalCode::parse(&journal).ok_or_else(|| DbError::Corrupt(format!("unknown journal {journal}")))?;
-        let number = format!("{}-{}-{:04}", journal.as_str(), year, sequence.unwrap_or_default());
-        let lines = self.entry_lines(entry_id)?;
-        let draft = reversal_of(
-            &lines,
-            journal,
-            date,
-            format!("Tegenboeking {number}: {reason}"),
-            entry_id,
-        );
-        self.post_inner(&draft, Some(entry_id))
+        let actor = self.actor.clone();
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let posted = reverse_in_tx(&tx, &actor, entry_id, date, reason)?;
+        tx.commit()?;
+        Ok(posted)
     }
 
     pub(crate) fn entry_lines(&self, entry_id: &str) -> Result<Vec<EntryLine>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT account, amount_cents, currency, tax_code, description
-             FROM journal_line WHERE entry_id = ?1 ORDER BY line_no",
-        )?;
-        let rows = stmt.query_map([entry_id], |r| {
-            let cur: String = r.get(2)?;
-            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, cur, r.get(3)?, r.get(4)?))
-        })?;
-        let mut out = Vec::new();
-        for row in rows {
-            let (account, cents, cur, tax_code, description) = row?;
-            let currency = Currency::new(&cur).map_err(|e| DbError::Corrupt(e.to_string()))?;
-            out.push(EntryLine {
-                account,
-                amount: Money::new(cents, currency),
-                tax_code,
-                description,
-            });
-        }
-        Ok(out)
+        entry_lines_in(&self.conn, entry_id)
     }
 
     /// Close a month: no further postings dated in it.
@@ -469,6 +423,69 @@ pub(crate) fn audit<O: Serialize + ?Sized, N: Serialize + ?Sized>(
 
 /// Post an entry inside an existing transaction; the caller commits.
 /// This is the single place where journal entries become posted.
+/// Reverse a posted entry inside the caller's transaction (see [`Ledger::reverse`]).
+pub(crate) fn reverse_in_tx(
+    tx: &Connection,
+    actor: &str,
+    entry_id: &str,
+    date: NaiveDate,
+    reason: &str,
+) -> Result<PostedEntry> {
+    let (journal, year, sequence, status): (String, i32, Option<i64>, String) = tx
+        .query_row(
+            "SELECT journal, fiscal_year, sequence, status FROM journal_entry WHERE id = ?1",
+            [entry_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()?
+        .ok_or_else(|| DbError::NotFound(entry_id.to_string()))?;
+    if status != "posted" {
+        return Err(DbError::NotFound(format!("posted entry {entry_id}")));
+    }
+    let already: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM journal_entry WHERE reverses_entry_id = ?1)",
+        [entry_id],
+        |r| r.get(0),
+    )?;
+    if already {
+        return Err(DbError::AlreadyReversed(entry_id.to_string()));
+    }
+    let journal = JournalCode::parse(&journal).ok_or_else(|| DbError::Corrupt(format!("unknown journal {journal}")))?;
+    let number = format!("{}-{}-{:04}", journal.as_str(), year, sequence.unwrap_or_default());
+    let lines = entry_lines_in(tx, entry_id)?;
+    let draft = reversal_of(
+        &lines,
+        journal,
+        date,
+        format!("Tegenboeking {number}: {reason}"),
+        entry_id,
+    );
+    post_in_tx(tx, actor, &draft, Some(entry_id))
+}
+
+pub(crate) fn entry_lines_in(conn: &Connection, entry_id: &str) -> Result<Vec<EntryLine>> {
+    let mut stmt = conn.prepare(
+        "SELECT account, amount_cents, currency, tax_code, description
+         FROM journal_line WHERE entry_id = ?1 ORDER BY line_no",
+    )?;
+    let rows = stmt.query_map([entry_id], |r| {
+        let cur: String = r.get(2)?;
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, cur, r.get(3)?, r.get(4)?))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (account, cents, cur, tax_code, description) = row?;
+        let currency = Currency::new(&cur).map_err(|e| DbError::Corrupt(e.to_string()))?;
+        out.push(EntryLine {
+            account,
+            amount: Money::new(cents, currency),
+            tax_code,
+            description,
+        });
+    }
+    Ok(out)
+}
+
 pub(crate) fn post_in_tx(
     tx: &Connection,
     actor: &str,

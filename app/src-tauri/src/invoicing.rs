@@ -4,7 +4,7 @@ use base64::Engine;
 use boekhoud_core::invoice::{PurchaseLine, SalesLine};
 use boekhoud_core::{Currency, Money};
 use boekhoud_db::{
-    Company, Contact, DocumentInfo, IssueRequirements, Ledger, PurchaseInput, PurchaseInvoiceDetail,
+    Company, Contact, DocumentInfo, IssueRequirements, Ledger, PurchaseDetails, PurchaseInput, PurchaseInvoiceDetail,
     PurchaseInvoiceSummary, SalesInvoiceDetail, SalesInvoiceInput, SalesInvoiceSummary, VatRegime,
 };
 use boekhoud_pdf::{InvoicePdf, Party, PdfLine};
@@ -415,8 +415,7 @@ pub struct PurchaseForm {
     lines: Vec<PurchaseLineForm>,
 }
 
-#[tauri::command]
-pub fn register_purchase_invoice(state: State<AppState>, invoice: PurchaseForm) -> CmdResult<PurchaseInvoiceSummary> {
+fn purchase_input(invoice: PurchaseForm) -> CmdResult<PurchaseInput> {
     if invoice.contact_id.is_empty() {
         return Err("Kies een leverancier.".into());
     }
@@ -447,7 +446,41 @@ pub fn register_purchase_invoice(state: State<AppState>, invoice: PurchaseForm) 
         paid_privately: invoice.paid_privately,
         document_ids: invoice.document_ids,
     };
+    Ok(input)
+}
+
+#[tauri::command]
+pub fn register_purchase_invoice(state: State<AppState>, invoice: PurchaseForm) -> CmdResult<PurchaseInvoiceSummary> {
+    let input = purchase_input(invoice)?;
     with_ledger(&state, |l| l.register_purchase_invoice(&input))
+}
+
+/// Replace a registered purchase invoice by a corrected one (reverses the original entry).
+#[tauri::command]
+pub fn correct_purchase_invoice(
+    state: State<AppState>,
+    id: String,
+    invoice: PurchaseForm,
+) -> CmdResult<PurchaseInvoiceSummary> {
+    let input = purchase_input(invoice)?;
+    with_ledger(&state, |l| l.correct_purchase_invoice(&id, &input))
+}
+
+/// Change the details that are not booked: description, supplier's invoice number, due date.
+#[tauri::command]
+pub fn update_purchase_details(
+    state: State<AppState>,
+    id: String,
+    description: String,
+    supplier_reference: Option<String>,
+    due_date: Option<String>,
+) -> CmdResult<PurchaseInvoiceSummary> {
+    let details = PurchaseDetails {
+        description,
+        supplier_reference: clean(supplier_reference),
+        due_date: opt_date(&due_date)?,
+    };
+    with_ledger(&state, |l| l.update_purchase_details(&id, &details))
 }
 
 #[tauri::command]

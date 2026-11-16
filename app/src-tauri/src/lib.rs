@@ -402,6 +402,8 @@ pub fn run() {
             invoicing::register_sales_payment,
             invoicing::open_sales_invoice_pdf,
             invoicing::register_purchase_invoice,
+            invoicing::correct_purchase_invoice,
+            invoicing::update_purchase_details,
             invoicing::purchase_invoices,
             invoicing::purchase_invoice,
             invoicing::attach_purchase_documents,

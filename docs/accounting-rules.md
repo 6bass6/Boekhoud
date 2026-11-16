@@ -211,6 +211,15 @@ het saldo van 1520 is het te betalen of terug te vragen bedrag. Betaling: D 1520
 Een foutieve definitieve boeking wordt volledig tegengeboekt (zelfde regels, omgekeerde bedragen,
 verwijzing naar de originele boeking) en daarna correct opnieuw geboekt.
 
+**Inkoopfactuur corrigeren** (knop "Corrigeren…"): de tegenboeking krijgt de datum van de oude
+factuur, zodat de btw-correctie in hetzelfde kwartaal valt; de gecorrigeerde factuur wordt op haar
+eigen datum geboekt. Beide gebeuren in één keer of niet. Niet toegestaan als er al een betaling op
+de factuur is geboekt (eerst die terugboeken) of als een betrokken maand is afgesloten (bijv. na de
+btw-aangifte); dan volgt de correctie in een later tijdvak via een gewone boeking. De oude factuur
+blijft zichtbaar als "Gecorrigeerd" met verwijzing naar de nieuwe. Omschrijving, factuurnummer van de
+leverancier en vervaldatum horen niet bij de geboekte bedragen en mogen direct worden gewijzigd
+(vastgelegd in de audit log); de boekingstekst in het grootboek blijft dan de oorspronkelijke.
+
 ### S12 — Jaarafsluiting
 
 Saldi van W&V-rekeningen → 0590 Resultaat lopend boekjaar; daarna 0510, 0520 en 0590 → 0500.

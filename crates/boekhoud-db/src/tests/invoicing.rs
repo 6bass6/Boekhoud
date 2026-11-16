@@ -274,6 +274,181 @@ fn purchase_invoice_holds_several_documents() {
 }
 
 #[test]
+fn purchase_invoice_can_be_corrected_by_reversal_and_new_registration() {
+    let (mut l, dir) = ledger_with_docs();
+    let s = supplier(&mut l);
+    let receipt = l.add_document(b"%PDF-1.4 bon", "bon.pdf", "purchase_invoice").unwrap();
+    let input = PurchaseInput {
+        contact_id: s.clone(),
+        supplier_reference: Some("C-1".into()),
+        invoice_date: d(2026, 11, 3),
+        due_date: None,
+        description: "Laptop".into(),
+        lines: vec![PurchaseLine {
+            description: None,
+            account: "4000".into(),
+            net_cents: 100_000,
+            tax_code: "I21".into(),
+            vat_cents: 21_000,
+        }],
+        paid_privately: false,
+        document_ids: vec![receipt.id.clone()],
+    };
+    let old = l.register_purchase_invoice(&input).unwrap();
+
+    // Typo in the amount: 1.000 should have been 1.100. Same supplier reference and document.
+    let fixed = PurchaseInput {
+        lines: vec![PurchaseLine {
+            net_cents: 110_000,
+            vat_cents: 23_100,
+            ..input.lines[0].clone()
+        }],
+        ..input.clone()
+    };
+    let new = l.correct_purchase_invoice(&old.id, &fixed).unwrap();
+    assert_eq!((new.total_cents, new.state.as_str()), (133_100, "open"));
+    assert_eq!(new.corrects_id.as_deref(), Some(old.id.as_str()));
+    let old_now = l.purchase_invoice(&old.id).unwrap().summary;
+    assert_eq!(old_now.state, "corrected");
+    assert_eq!(old_now.corrected_by_id.as_deref(), Some(new.id.as_str()));
+    assert_eq!(l.purchase_invoice(&new.id).unwrap().documents.len(), 1);
+
+    // Only the corrected amounts remain in the books.
+    let tb = l.trial_balance(None).unwrap();
+    let bal = |a: &str| tb.iter().find(|r| r.account == a).map_or(0, |r| r.balance_cents);
+    assert_eq!((bal("4000"), bal("1500"), bal("1600")), (110_000, 23_100, -133_100));
+
+    // A corrected invoice cannot be corrected or edited again.
+    assert!(matches!(
+        l.correct_purchase_invoice(&old.id, &fixed),
+        Err(DbError::Invalid(_))
+    ));
+    // The document still counts for the new invoice only.
+    let other = PurchaseInput {
+        supplier_reference: Some("C-2".into()),
+        ..fixed.clone()
+    };
+    assert!(matches!(l.register_purchase_invoice(&other), Err(DbError::Invalid(_))));
+
+    // Not after a payment.
+    l.register_purchase_payment(&new.id, d(2026, 11, 10), 133_100, "bank")
+        .unwrap();
+    assert!(matches!(
+        l.correct_purchase_invoice(&new.id, &input),
+        Err(DbError::Invalid(_))
+    ));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn purchase_correction_is_refused_in_a_closed_period() {
+    let mut l = Ledger::open_in_memory().unwrap();
+    let s = supplier(&mut l);
+    let input = PurchaseInput {
+        contact_id: s,
+        supplier_reference: None,
+        invoice_date: d(2026, 10, 3),
+        due_date: None,
+        description: "Hosting oktober".into(),
+        lines: vec![PurchaseLine {
+            description: None,
+            account: "4000".into(),
+            net_cents: 1_000,
+            tax_code: "I21".into(),
+            vat_cents: 210,
+        }],
+        paid_privately: false,
+        document_ids: vec![],
+    };
+    let p = l.register_purchase_invoice(&input).unwrap();
+    l.close_period(2026, 10).unwrap();
+    let fixed = PurchaseInput {
+        invoice_date: d(2026, 11, 3),
+        ..input.clone()
+    };
+    assert!(matches!(
+        l.correct_purchase_invoice(&p.id, &fixed),
+        Err(DbError::Invalid(_))
+    ));
+    // Nothing was booked: the original is untouched.
+    assert_eq!(l.purchase_invoice(&p.id).unwrap().summary.state, "open");
+}
+
+#[test]
+fn purchase_details_can_be_edited_without_touching_the_booking() {
+    let mut l = Ledger::open_in_memory().unwrap();
+    let s = supplier(&mut l);
+    let base = PurchaseInput {
+        contact_id: s,
+        supplier_reference: Some("E-1".into()),
+        invoice_date: d(2026, 11, 4),
+        due_date: None,
+        description: "Hostng".into(),
+        lines: vec![PurchaseLine {
+            description: None,
+            account: "4000".into(),
+            net_cents: 5_000,
+            tax_code: "I21".into(),
+            vat_cents: 1_050,
+        }],
+        paid_privately: false,
+        document_ids: vec![],
+    };
+    let p = l.register_purchase_invoice(&base).unwrap();
+    let second = l
+        .register_purchase_invoice(&PurchaseInput {
+            supplier_reference: Some("E-2".into()),
+            ..base.clone()
+        })
+        .unwrap();
+    let details = PurchaseDetails {
+        description: "Hosting".into(),
+        supplier_reference: Some("E-1a".into()),
+        due_date: Some(d(2026, 12, 4)),
+    };
+    let s1 = l.update_purchase_details(&p.id, &details).unwrap();
+    assert_eq!(
+        (s1.description.as_str(), s1.supplier_reference.as_deref(), s1.due_date),
+        ("Hosting", Some("E-1a"), Some(d(2026, 12, 4)))
+    );
+    assert_eq!(
+        (s1.total_cents, s1.entry_id.as_str()),
+        (p.total_cents, p.entry_id.as_str())
+    );
+    // Another invoice's number from the same supplier is refused; an empty description too.
+    let clash = PurchaseDetails {
+        supplier_reference: Some("E-1a".into()),
+        ..details.clone()
+    };
+    assert!(matches!(
+        l.update_purchase_details(&second.id, &clash),
+        Err(DbError::Invalid(_))
+    ));
+    let empty = PurchaseDetails {
+        description: " ".into(),
+        ..details.clone()
+    };
+    assert!(matches!(
+        l.update_purchase_details(&p.id, &empty),
+        Err(DbError::Invalid(_))
+    ));
+    // Booked fields stay locked at database level.
+    assert!(l
+        .conn()
+        .execute("UPDATE purchase_invoice SET total_cents = 1 WHERE id = ?1", [&p.id])
+        .is_err());
+    let audited: i64 = l
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'update_details' AND entity_id = ?1",
+            [&p.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(audited, 1);
+}
+
+#[test]
 fn migration_keeps_existing_purchase_documents() {
     use crate::migrations::MIGRATIONS;
     let conn = rusqlite::Connection::open_in_memory().unwrap();

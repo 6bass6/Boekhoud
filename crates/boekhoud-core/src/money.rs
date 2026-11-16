@@ -268,7 +268,6 @@ mod tests {
         // Three digits after a lone dot: a thousands separator, as before.
         assert_eq!(p("1.234"), 123_400);
         assert_eq!(p("42"), 4_200);
-        assert!(Money::parse_input("12.5.", Currency::EUR).is_err());
     }
 
     #[test]

@@ -1,21 +1,27 @@
 import { useState } from "react";
-import { api, type DocumentInfo, type PurchaseForm, type PurchaseLineForm, type PurchaseSummary } from "../api";
+import { api, type DocumentInfo, type PurchaseDetail, type PurchaseForm, type PurchaseLineForm, type PurchaseSummary } from "../api";
 import { DocumentTabs, DocumentUpload } from "../components/DocumentViewer";
 import { useLoad } from "../hooks";
 import { centsToInput, formatDate, formatEuro, parseCents, todayIso, vatFor } from "../money";
 import { ContactForm, emptyContact } from "./Contacts";
 
 const stateLabel: Record<PurchaseSummary["state"], string> = {
-  open: "Open", paid: "Betaald", paid_privately: "Privé betaald", reversed: "Tegengeboekt",
+  open: "Open", paid: "Betaald", paid_privately: "Privé betaald", reversed: "Tegengeboekt", corrected: "Gecorrigeerd",
 };
+const inactive = (state: PurchaseSummary["state"]) => state === "reversed" || state === "corrected";
 
 export function Purchases({ year }: { year: number }) {
   const list = useLoad(() => api.purchaseInvoices(year), [year]);
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [correcting, setCorrecting] = useState<PurchaseDetail | null>(null);
 
-  if (creating) return <PurchaseEditor onDone={(id) => { setCreating(false); list.reload(); if (id) setSelected(id); }} />;
-  const missingDocs = (list.data ?? []).filter((p) => !p.has_document && p.state !== "reversed").length;
+  if (creating || correcting) {
+    return <PurchaseEditor correcting={correcting} onDone={(id) => {
+      setCreating(false); setCorrecting(null); list.reload(); if (id) setSelected(id);
+    }} />;
+  }
+  const missingDocs = (list.data ?? []).filter((p) => !p.has_document && !inactive(p.state)).length;
   return (
     <section className="split">
       <div>
@@ -31,7 +37,7 @@ export function Purchases({ year }: { year: number }) {
             <thead><tr><th>Datum</th><th>Leverancier</th><th>Omschrijving</th><th>Status</th><th className="num">Totaal</th><th>Bon</th></tr></thead>
             <tbody>
               {list.data.map((p) => (
-                <tr key={p.id} className={(selected === p.id ? "selected " : "") + (p.state === "reversed" ? "inactive" : "")} onClick={() => setSelected(p.id)}>
+                <tr key={p.id} className={(selected === p.id ? "selected " : "") + (inactive(p.state) ? "inactive" : "")} onClick={() => setSelected(p.id)}>
                   <td>{formatDate(p.invoice_date)}</td>
                   <td>{p.contact_name}</td>
                   <td className="desc">{p.description}</td>
@@ -44,15 +50,18 @@ export function Purchases({ year }: { year: number }) {
           </table>
         )}
       </div>
-      {selected && <PurchasePanel id={selected} onChanged={list.reload} />}
+      {selected && <PurchasePanel id={selected} onChanged={list.reload} onSelect={setSelected} onCorrect={setCorrecting} />}
     </section>
   );
 }
 
-function PurchasePanel({ id, onChanged }: { id: string; onChanged: () => void }) {
+function PurchasePanel({ id, onChanged, onSelect, onCorrect }: {
+  id: string; onChanged: () => void; onSelect: (id: string) => void; onCorrect: (d: PurchaseDetail) => void;
+}) {
   const detail = useLoad(() => api.purchaseInvoice(id), [id]);
   const [error, setError] = useState<string | null>(null);
   const [payDate, setPayDate] = useState(todayIso());
+  const [editing, setEditing] = useState(false);
   const run = (p: Promise<unknown>) => { setError(null); p.then(() => { detail.reload(); onChanged(); }).catch((e) => setError(String(e))); };
   const d = detail.data;
   if (detail.error) return <aside className="panel"><p className="error">{detail.error}</p></aside>;
@@ -60,7 +69,24 @@ function PurchasePanel({ id, onChanged }: { id: string; onChanged: () => void })
   return (
     <aside className="panel">
       <h3>{d.summary.contact_name}</h3>
-      <p>{d.summary.description}<br /><span className="muted small">{formatDate(d.summary.invoice_date)}{d.summary.supplier_reference && ` · factuur ${d.summary.supplier_reference}`}</span></p>
+      {d.summary.corrected_by_id && (
+        <p className="warning small">Deze factuur is gecorrigeerd en telt niet meer mee.{" "}
+          <button className="link" onClick={() => onSelect(d.summary.corrected_by_id!)}>Nieuwe versie bekijken</button></p>
+      )}
+      {d.summary.corrects_id && (
+        <p className="muted small">Dit is een correctie.{" "}
+          <button className="link" onClick={() => onSelect(d.summary.corrects_id!)}>Oude versie bekijken</button></p>
+      )}
+      {editing
+        ? <DetailsForm detail={d} onCancel={() => setEditing(false)}
+            onSaved={() => { setEditing(false); detail.reload(); onChanged(); }} />
+        : <p>{d.summary.description}<br /><span className="muted small">{formatDate(d.summary.invoice_date)}{d.summary.supplier_reference && ` · factuur ${d.summary.supplier_reference}`}{d.summary.due_date && ` · vervalt ${formatDate(d.summary.due_date)}`}</span></p>}
+      {!editing && !inactive(d.summary.state) && (
+        <div className="row gap">
+          <button onClick={() => setEditing(true)} title="Omschrijving, factuurnummer en vervaldatum; de boeking blijft gelijk">Gegevens wijzigen</button>
+          <button onClick={() => onCorrect(d)} title="Bedragen, datum, leverancier of rekening aanpassen: de oude boeking wordt tegengeboekt en de nieuwe geboekt">Corrigeren…</button>
+        </div>
+      )}
       <table>
         <tbody>
           {d.lines.map((l, i) => <tr key={i}><td>{l.account} {l.description}</td><td>{l.tax_code}</td><td className="num">{formatEuro(l.net_cents)}</td><td className="num">{formatEuro(l.vat_cents)}</td></tr>)}
@@ -77,26 +103,64 @@ function PurchasePanel({ id, onChanged }: { id: string; onChanged: () => void })
           </div>
         </div>
       )}
-      {d.documents.length === 0 && <div className="box"><span className="warning small">Geen bewijsstuk gekoppeld.</span></div>}
-      <DocumentUpload type="purchase_invoice" multiple label={d.documents.length ? "Bestanden toevoegen…" : "Bewijsstukken toevoegen…"}
-        onUploaded={(docs) => run(api.attachPurchaseDocuments(id, docs.map((x) => x.id)))} />
+      {d.documents.length === 0 && !inactive(d.summary.state) && <div className="box"><span className="warning small">Geen bewijsstuk gekoppeld.</span></div>}
+      {!inactive(d.summary.state) && (
+        <DocumentUpload type="purchase_invoice" multiple label={d.documents.length ? "Bestanden toevoegen…" : "Bewijsstukken toevoegen…"}
+          onUploaded={(docs) => run(api.attachPurchaseDocuments(id, docs.map((x) => x.id)))} />
+      )}
       <DocumentTabs key={id} docs={d.documents} height={420} />
     </aside>
   );
 }
 
+/** Quick edit of what is not booked: description, supplier's invoice number, due date. */
+function DetailsForm({ detail, onCancel, onSaved }: { detail: PurchaseDetail; onCancel: () => void; onSaved: () => void }) {
+  const [description, setDescription] = useState(detail.summary.description);
+  const [reference, setReference] = useState(detail.summary.supplier_reference ?? "");
+  const [due, setDue] = useState(detail.summary.due_date ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const save = () => api.updatePurchaseDetails(detail.summary.id, description, reference || null, due || null)
+    .then(onSaved).catch((e) => setError(String(e)));
+  return (
+    <div className="box">
+      <div className="form-grid">
+        <label className="wide">Omschrijving <input value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+        <label>Factuurnummer leverancier <input value={reference} onChange={(e) => setReference(e.target.value)} /></label>
+        <label>Vervaldatum <input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
+      </div>
+      <p className="muted small">Bedragen, datum of leverancier aanpassen? Gebruik dan Corrigeren.</p>
+      {error && <p className="error">{error}</p>}
+      <div className="row gap">
+        <button className="primary" onClick={save}>Opslaan</button>
+        <button onClick={onCancel}>Annuleren</button>
+      </div>
+    </div>
+  );
+}
+
 const emptyLine = (code: string): PurchaseLineForm => ({ description: null, account: "", net: "", tax_code: code, vat: "" });
 
-function PurchaseEditor({ onDone }: { onDone: (id: string | null) => void }) {
+function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) => void; correcting?: PurchaseDetail | null }) {
   const contacts = useLoad(() => api.contacts(), []);
   const accounts = useLoad(() => api.accounts(), []);
-  const [form, setForm] = useState<PurchaseForm>({
+  const [form, setForm] = useState<PurchaseForm>(() => correcting ? {
+    contact_id: correcting.summary.contact_id,
+    supplier_reference: correcting.summary.supplier_reference,
+    invoice_date: correcting.summary.invoice_date,
+    due_date: correcting.summary.due_date,
+    description: correcting.summary.description,
+    paid_privately: correcting.summary.state === "paid_privately",
+    document_ids: [],
+    lines: correcting.lines.map((l) => ({
+      description: l.description, account: l.account, net: centsToInput(l.net_cents), tax_code: l.tax_code, vat: centsToInput(l.vat_cents),
+    })),
+  } : {
     contact_id: "", supplier_reference: null, invoice_date: todayIso(), due_date: null, description: "",
     paid_privately: false, document_ids: [], lines: [emptyLine("I21")],
   });
   const taxCodes = useLoad(() => api.taxCodes(form.invoice_date || todayIso()), [form.invoice_date]);
   const regime = useLoad(() => api.vatRegime(form.invoice_date || todayIso()), [form.invoice_date]);
-  const [docs, setDocs] = useState<DocumentInfo[]>([]);
+  const [docs, setDocs] = useState<DocumentInfo[]>(correcting?.documents ?? []);
   const [newContact, setNewContact] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,15 +185,21 @@ function PurchaseEditor({ onDone }: { onDone: (id: string | null) => void }) {
       lines: f.lines.map((l, i) => i === 0 && !l.account ? { ...l, account: c?.default_account ?? "", tax_code: c?.default_tax_code ?? l.tax_code } : l),
     }));
   };
-  const save = () => api.registerPurchase({ ...form, document_ids: docs.map((x) => x.id) }).then((s) => onDone(s.id)).catch((e) => setError(String(e)));
+  const save = () => {
+    const invoice = { ...form, document_ids: docs.map((x) => x.id) };
+    (correcting ? api.correctPurchase(correcting.summary.id, invoice) : api.registerPurchase(invoice))
+      .then((s) => onDone(s.id)).catch((e) => setError(String(e)));
+  };
 
   return (
     <section className="split wide-right">
       <div>
         <header className="row">
-          <h2>Inkoopfactuur registreren</h2>
-          <button onClick={() => onDone(null)}>Terug</button>
+          <h2>{correcting ? "Inkoopfactuur corrigeren" : "Inkoopfactuur registreren"}</h2>
+          <button onClick={() => onDone(correcting?.summary.id ?? null)}>Terug</button>
         </header>
+        {correcting && <p className="muted small">Pas aan wat niet klopt. Bij opslaan wordt de oude boeking tegengeboekt (op de oude factuurdatum) en de
+          gecorrigeerde factuur opnieuw geboekt. De oude versie blijft zichtbaar als "Gecorrigeerd".</p>}
         <div className="form-grid">
           <label className="wide">Leverancier
             <span className="row gap">
@@ -142,6 +212,7 @@ function PurchaseEditor({ onDone }: { onDone: (id: string | null) => void }) {
           </label>
           <label>Factuurdatum <input type="date" value={form.invoice_date} onChange={(e) => setForm({ ...form, invoice_date: e.target.value })} /></label>
           <label>Factuurnummer leverancier <input value={form.supplier_reference ?? ""} onChange={(e) => setForm({ ...form, supplier_reference: e.target.value || null })} /></label>
+          <label>Vervaldatum <input type="date" value={form.due_date ?? ""} onChange={(e) => setForm({ ...form, due_date: e.target.value || null })} /></label>
           <label className="wide">Omschrijving <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
         </div>
         {newContact && (
@@ -179,7 +250,7 @@ function PurchaseEditor({ onDone }: { onDone: (id: string | null) => void }) {
         <label className="check"><input type="checkbox" checked={form.paid_privately} onChange={(e) => setForm({ ...form, paid_privately: e.target.checked })} /> Betaald vanaf privérekening (boekt op Privé-stortingen)</label>
         {error && <p className="error">{error}</p>}
         <div className="row gap" style={{ marginTop: 12 }}>
-          <button className="primary" onClick={save}>Registreren en boeken</button>
+          <button className="primary" onClick={save}>{correcting ? "Correctie opslaan en boeken" : "Registreren en boeken"}</button>
           {docs.length === 0 && <span className="warning small">Nog geen bewijsstuk toegevoegd.</span>}
         </div>
       </div>

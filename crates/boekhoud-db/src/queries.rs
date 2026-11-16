@@ -332,7 +332,7 @@ impl Ledger {
                 "SELECT COUNT(*) FROM bank_transaction t WHERE t.status = 'open' AND (t.entry_id IS NULL
                    OR EXISTS (SELECT 1 FROM journal_entry r WHERE r.reverses_entry_id = t.entry_id))",
             )?,
-            purchases_without_document: purchases.iter().filter(|p| !p.has_document && p.state != "reversed").count() as i64,
+            purchases_without_document: purchases.iter().filter(|p| !p.has_document && !matches!(p.state.as_str(), "reversed" | "corrected")).count() as i64,
             draft_invoices: sales.iter().filter(|s| s.status == "draft").count() as i64,
             unbooked_platform_reports: count("SELECT COUNT(*) FROM platform_report WHERE entry_id IS NULL")?,
             hours_minutes: self.conn.query_row(

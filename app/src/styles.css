@@ -114,3 +114,4 @@ header.row h2 { white-space: nowrap; margin-right: 12px; }
 header.row { flex-wrap: wrap; gap: 8px; }
 .doc-tabs { flex-wrap: wrap; }
 .doc-tabs button { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.link { background: none !important; border: 0 !important; padding: 0 4px !important; color: var(--accent) !important; text-decoration: underline; cursor: pointer; }
