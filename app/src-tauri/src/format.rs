@@ -30,9 +30,9 @@ pub fn quantity(milli: i64) -> String {
     }
 }
 
-/// Parse Dutch quantity text ("1,5", "2") into thousandths.
+/// Parse Dutch quantity text ("1,5", "2", also "1.5") into thousandths.
 pub fn parse_quantity(s: &str) -> Option<i64> {
-    let t = s.trim().replace('.', "").replace(',', ".");
+    let t = boekhoud_core::dutch_decimal(s).replace('.', "").replace(',', ".");
     let (neg, t) = match t.strip_prefix('-') {
         Some(r) => (true, r.to_string()),
         None => (false, t),
@@ -76,6 +76,8 @@ mod tests {
         assert_eq!(quantity(1500), "1,5");
         assert_eq!(quantity(-2250), "-2,25");
         assert_eq!(parse_quantity("1,5"), Some(1500));
+        assert_eq!(parse_quantity("1.5"), Some(1500));
+        assert_eq!(parse_quantity("1.000"), Some(1_000_000));
         assert_eq!(parse_quantity("120,5"), Some(120_500));
         assert_eq!(parse_quantity("1,2345"), None);
         assert_eq!(rate(2100), "21%");

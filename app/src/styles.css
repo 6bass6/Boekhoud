@@ -112,3 +112,5 @@ details summary { cursor: pointer; color: var(--accent); margin: 12px 0 6px; }
 .file-button { white-space: nowrap; }
 header.row h2 { white-space: nowrap; margin-right: 12px; }
 header.row { flex-wrap: wrap; gap: 8px; }
+.doc-tabs { flex-wrap: wrap; }
+.doc-tabs button { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

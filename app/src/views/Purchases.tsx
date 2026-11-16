@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type DocumentInfo, type PurchaseForm, type PurchaseLineForm, type PurchaseSummary } from "../api";
-import { DocumentUpload, DocumentViewer } from "../components/DocumentViewer";
+import { DocumentTabs, DocumentUpload } from "../components/DocumentViewer";
 import { useLoad } from "../hooks";
 import { centsToInput, formatDate, formatEuro, parseCents, todayIso, vatFor } from "../money";
 import { ContactForm, emptyContact } from "./Contacts";
@@ -77,11 +77,10 @@ function PurchasePanel({ id, onChanged }: { id: string; onChanged: () => void })
           </div>
         </div>
       )}
-      {d.document_id
-        ? <DocumentViewer id={d.document_id} height={420} />
-        : <div className="box"><span className="warning small">Geen bewijsstuk gekoppeld.</span>
-            <DocumentUpload type="purchase_invoice" label="Bewijsstuk toevoegen…" onUploaded={(doc) => run(api.attachPurchaseDocument(id, doc.id))} />
-          </div>}
+      {d.documents.length === 0 && <div className="box"><span className="warning small">Geen bewijsstuk gekoppeld.</span></div>}
+      <DocumentUpload type="purchase_invoice" multiple label={d.documents.length ? "Bestanden toevoegen…" : "Bewijsstukken toevoegen…"}
+        onUploaded={(docs) => run(api.attachPurchaseDocuments(id, docs.map((x) => x.id)))} />
+      <DocumentTabs key={id} docs={d.documents} height={420} />
     </aside>
   );
 }
@@ -93,11 +92,11 @@ function PurchaseEditor({ onDone }: { onDone: (id: string | null) => void }) {
   const accounts = useLoad(() => api.accounts(), []);
   const [form, setForm] = useState<PurchaseForm>({
     contact_id: "", supplier_reference: null, invoice_date: todayIso(), due_date: null, description: "",
-    paid_privately: false, document_id: null, lines: [emptyLine("I21")],
+    paid_privately: false, document_ids: [], lines: [emptyLine("I21")],
   });
   const taxCodes = useLoad(() => api.taxCodes(form.invoice_date || todayIso()), [form.invoice_date]);
   const regime = useLoad(() => api.vatRegime(form.invoice_date || todayIso()), [form.invoice_date]);
-  const [doc, setDoc] = useState<DocumentInfo | null>(null);
+  const [docs, setDocs] = useState<DocumentInfo[]>([]);
   const [newContact, setNewContact] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -122,7 +121,7 @@ function PurchaseEditor({ onDone }: { onDone: (id: string | null) => void }) {
       lines: f.lines.map((l, i) => i === 0 && !l.account ? { ...l, account: c?.default_account ?? "", tax_code: c?.default_tax_code ?? l.tax_code } : l),
     }));
   };
-  const save = () => api.registerPurchase({ ...form, document_id: doc?.id ?? null }).then((s) => onDone(s.id)).catch((e) => setError(String(e)));
+  const save = () => api.registerPurchase({ ...form, document_ids: docs.map((x) => x.id) }).then((s) => onDone(s.id)).catch((e) => setError(String(e)));
 
   return (
     <section className="split wide-right">
@@ -181,13 +180,15 @@ function PurchaseEditor({ onDone }: { onDone: (id: string | null) => void }) {
         {error && <p className="error">{error}</p>}
         <div className="row gap" style={{ marginTop: 12 }}>
           <button className="primary" onClick={save}>Registreren en boeken</button>
-          {!doc && <span className="warning small">Nog geen bewijsstuk toegevoegd.</span>}
+          {docs.length === 0 && <span className="warning small">Nog geen bewijsstuk toegevoegd.</span>}
         </div>
       </div>
       <aside className="panel">
-        <h3>Bewijsstuk</h3>
-        {doc ? <DocumentViewer id={doc.id} height={560} /> : <p className="muted small">Voeg de factuur of bon toe (PDF of foto); je ziet hem hier naast de gegevens.</p>}
-        <DocumentUpload type="purchase_invoice" label={doc ? "Ander bestand…" : "Bestand kiezen…"} onUploaded={setDoc} />
+        <h3>Bewijsstukken</h3>
+        {docs.length === 0 && <p className="muted small">Voeg de factuur, bon of andere stukken toe (PDF of foto, meerdere tegelijk mogelijk); je ziet ze hier naast de gegevens.</p>}
+        <DocumentUpload type="purchase_invoice" multiple label={docs.length ? "Meer bestanden…" : "Bestanden kiezen…"}
+          onUploaded={(added) => setDocs((cur) => [...cur, ...added.filter((a) => !cur.some((c) => c.id === a.id))])} />
+        <DocumentTabs docs={docs} height={560} onRemove={(rid) => setDocs((cur) => cur.filter((c) => c.id !== rid))} />
       </aside>
     </section>
   );

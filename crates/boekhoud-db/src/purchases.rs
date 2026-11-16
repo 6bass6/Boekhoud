@@ -1,4 +1,4 @@
-//! Purchase invoices (received): registered and posted in one step, with optional document.
+//! Purchase invoices (received): registered and posted in one step, with any number of documents.
 
 use chrono::NaiveDate;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
@@ -8,6 +8,7 @@ use boekhoud_core::invoice::{purchase_entry_lines, purchase_totals, PurchaseLine
 use boekhoud_core::{EntryDraft, JournalCode, Source};
 
 use crate::contacts::contact_by_id;
+use crate::documents::DocumentInfo;
 use crate::sales::{payments_for, record_payment, PaymentView};
 use crate::tax::{iso, vat_rules_on};
 use crate::{audit, post_in_tx, DbError, Ledger, Result};
@@ -25,7 +26,9 @@ pub struct PurchaseInput {
     pub lines: Vec<PurchaseLine>,
     #[serde(default)]
     pub paid_privately: bool,
-    pub document_id: Option<String>,
+    /// Attached documents (invoice, receipt, …), in display order.
+    #[serde(default)]
+    pub document_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -51,7 +54,7 @@ pub struct PurchaseInvoiceDetail {
     pub lines: Vec<PurchaseLine>,
     pub subtotal_cents: i64,
     pub vat_cents: i64,
-    pub document_id: Option<String>,
+    pub documents: Vec<DocumentInfo>,
     pub payments: Vec<PaymentView>,
 }
 
@@ -79,11 +82,83 @@ pub(crate) fn purchase_open_cents(conn: &Connection, id: &str) -> Result<i64> {
     Ok(total - paid)
 }
 
+/// Link documents to a purchase invoice after the ones already attached. Skips repeats in `ids`;
+/// refuses unknown documents and documents that belong to another purchase invoice.
+/// Returns the ids that were newly linked.
+fn link_documents(conn: &Connection, invoice_id: &str, ids: &[String]) -> Result<Vec<String>> {
+    let mut position: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(position), 0) FROM purchase_invoice_document WHERE purchase_invoice_id = ?1",
+        [invoice_id],
+        |r| r.get(0),
+    )?;
+    let mut added = Vec::new();
+    for id in ids {
+        if added.contains(id) {
+            continue;
+        }
+        let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM document WHERE id = ?1)", [id], |r| {
+            r.get(0)
+        })?;
+        if !exists {
+            return Err(DbError::NotFound(format!("document {id}")));
+        }
+        let owner: Option<String> = conn
+            .query_row(
+                "SELECT purchase_invoice_id FROM purchase_invoice_document WHERE document_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match owner {
+            Some(o) if o == invoice_id => continue,
+            Some(_) => {
+                return Err(DbError::Invalid(
+                    "dit document hoort al bij een andere inkoopfactuur".into(),
+                ))
+            }
+            None => {}
+        }
+        position += 1;
+        conn.execute(
+            "INSERT INTO purchase_invoice_document (purchase_invoice_id, document_id, position) VALUES (?1, ?2, ?3)",
+            params![invoice_id, id, position],
+        )?;
+        added.push(id.clone());
+    }
+    Ok(added)
+}
+
+fn documents_of(conn: &Connection, invoice_id: &str) -> Result<Vec<DocumentInfo>> {
+    let mut stmt = conn.prepare(
+        "SELECT d.id, d.sha256, d.original_filename, d.mime_type, d.size_bytes, d.document_type, d.uploaded_at,
+                d.retention_until
+         FROM purchase_invoice_document l JOIN document d ON d.id = l.document_id
+         WHERE l.purchase_invoice_id = ?1 ORDER BY l.position",
+    )?;
+    let docs = stmt
+        .query_map([invoice_id], |r| {
+            Ok(DocumentInfo {
+                id: r.get(0)?,
+                sha256: r.get(1)?,
+                original_filename: r.get(2)?,
+                mime_type: r.get(3)?,
+                size_bytes: r.get(4)?,
+                document_type: r.get(5)?,
+                uploaded_at: r.get(6)?,
+                retention_until: r.get(7)?,
+            })
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(docs)
+}
+
 fn summary(conn: &Connection, id: &str) -> Result<PurchaseInvoiceSummary> {
     let row = conn
         .query_row(
             "SELECT p.id, p.contact_id, c.name, p.supplier_reference, p.invoice_date, p.due_date, p.description,
-                    p.total_cents, p.document_id IS NOT NULL, p.paid_privately, p.entry_id,
+                    p.total_cents,
+                    EXISTS(SELECT 1 FROM purchase_invoice_document d WHERE d.purchase_invoice_id = p.id),
+                    p.paid_privately, p.entry_id,
                     EXISTS(SELECT 1 FROM journal_entry r WHERE r.reverses_entry_id = p.entry_id)
              FROM purchase_invoice p JOIN contact c ON c.id = p.contact_id WHERE p.id = ?1",
             [id],
@@ -173,18 +248,6 @@ impl Ledger {
                 )));
             }
         }
-        if let Some(doc) = &input.document_id {
-            let used: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM purchase_invoice WHERE document_id = ?1)",
-                [doc],
-                |row| row.get(0),
-            )?;
-            if used {
-                return Err(DbError::Invalid(
-                    "dit document hoort al bij een andere inkoopfactuur".into(),
-                ));
-            }
-        }
         let rules = vat_rules_on(&tx, input.invoice_date)?;
         let (net, vat, total) = purchase_totals(&input.lines, &rules).map_err(|e| DbError::Invalid(e.to_string()))?;
         let credit_account = if input.paid_privately {
@@ -209,8 +272,8 @@ impl Ledger {
         let posted = post_in_tx(&tx, &actor, &draft, None)?;
         tx.execute(
             "INSERT INTO purchase_invoice (id, contact_id, supplier_reference, invoice_date, due_date, description,
-                 subtotal_cents, vat_cents, total_cents, paid_privately, entry_id, document_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 subtotal_cents, vat_cents, total_cents, paid_privately, entry_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 id,
                 input.contact_id,
@@ -222,10 +285,10 @@ impl Ledger {
                 vat,
                 total,
                 input.paid_privately,
-                posted.id,
-                input.document_id
+                posted.id
             ],
         )?;
+        link_documents(&tx, &id, &input.document_ids)?;
         for (i, l) in input.lines.iter().enumerate() {
             tx.execute(
                 "INSERT INTO purchase_invoice_line (invoice_id, line_no, description, account, net_cents, tax_code, vat_cents)
@@ -261,10 +324,10 @@ impl Ledger {
 
     pub fn purchase_invoice(&self, id: &str) -> Result<PurchaseInvoiceDetail> {
         let s = summary(&self.conn, id)?;
-        let (subtotal, vat, document_id): (i64, i64, Option<String>) = self.conn.query_row(
-            "SELECT subtotal_cents, vat_cents, document_id FROM purchase_invoice WHERE id = ?1",
+        let (subtotal, vat): (i64, i64) = self.conn.query_row(
+            "SELECT subtotal_cents, vat_cents FROM purchase_invoice WHERE id = ?1",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         let mut stmt = self.conn.prepare(
             "SELECT description, account, net_cents, tax_code, vat_cents FROM purchase_invoice_line
@@ -287,20 +350,29 @@ impl Ledger {
             lines,
             subtotal_cents: subtotal,
             vat_cents: vat,
-            document_id,
+            documents: documents_of(&self.conn, id)?,
         })
     }
 
-    /// Attach the original document afterwards (only if none is attached yet).
-    pub fn attach_purchase_document(&mut self, id: &str, document_id: &str) -> Result<()> {
-        self.document(document_id)?;
-        let n = self.conn.execute(
-            "UPDATE purchase_invoice SET document_id = ?2 WHERE id = ?1 AND document_id IS NULL",
-            params![id, document_id],
-        )?;
-        if n == 0 {
-            return Err(DbError::Invalid("er is al een document gekoppeld".into()));
+    /// Attach more documents to a registered purchase invoice (they are added after the existing ones).
+    pub fn attach_purchase_documents(&mut self, id: &str, document_ids: &[String]) -> Result<()> {
+        let actor = self.actor.clone();
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        summary(&tx, id)?;
+        let added = link_documents(&tx, id, document_ids)?;
+        if !added.is_empty() {
+            audit(
+                &tx,
+                &actor,
+                "attach_documents",
+                "purchase_invoice",
+                id,
+                None::<&()>,
+                Some(&added),
+                None,
+            )?;
         }
+        tx.commit()?;
         Ok(())
     }
 

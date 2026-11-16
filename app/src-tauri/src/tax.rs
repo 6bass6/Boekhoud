@@ -142,7 +142,7 @@ pub fn add_asset(state: State<AppState>, asset: AssetForm) -> CmdResult<String> 
         if s.trim().is_empty() {
             return Ok(0);
         }
-        Money::parse(s.trim(), ',', Currency::EUR)
+        Money::parse_input(s.trim(), Currency::EUR)
             .map(|m| m.cents)
             .map_err(|_| format!("Ongeldig bedrag bij {what}."))
     };

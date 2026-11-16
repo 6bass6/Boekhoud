@@ -140,7 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 vat_cents: 525,
             }],
             paid_privately: false,
-            document_id: None,
+            document_ids: vec![],
         })?;
     }
     l.register_purchase_invoice(&PurchaseInput {
@@ -157,7 +157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             vat_cents: 5_040,
         }],
         paid_privately: false,
-        document_id: None,
+        document_ids: vec![],
     })?;
 
     // Apple report for an October period.

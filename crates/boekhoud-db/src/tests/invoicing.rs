@@ -168,7 +168,7 @@ fn purchase_invoice_posts_and_detects_duplicates() {
             vat_cents: 2_100,
         }],
         paid_privately: false,
-        document_id: None,
+        document_ids: vec![],
     };
     let p = l.register_purchase_invoice(&input).unwrap();
     assert_eq!(
@@ -196,6 +196,109 @@ fn purchase_invoice_posts_and_detects_duplicates() {
     // Reversing the entry marks the invoice as reversed.
     l.reverse(&pp.entry_id, d(2026, 11, 6), "dubbel").unwrap();
     assert_eq!(l.purchase_invoice(&pp.id).unwrap().summary.state, "reversed");
+}
+
+#[test]
+fn purchase_invoice_holds_several_documents() {
+    let (mut l, dir) = ledger_with_docs();
+    let s = supplier(&mut l);
+    let invoice = l
+        .add_document(b"%PDF-1.4 factuur", "factuur.pdf", "purchase_invoice")
+        .unwrap();
+    let receipt = l.add_document(b"PNG kassabon", "bon.png", "purchase_invoice").unwrap();
+    let input = PurchaseInput {
+        contact_id: s.clone(),
+        supplier_reference: Some("M-1".into()),
+        invoice_date: d(2026, 11, 2),
+        due_date: None,
+        description: "Monitor".into(),
+        lines: vec![PurchaseLine {
+            description: None,
+            account: "4000".into(),
+            net_cents: 20_000,
+            tax_code: "I21".into(),
+            vat_cents: 4_200,
+        }],
+        paid_privately: false,
+        // A repeated id is linked once.
+        document_ids: vec![invoice.id.clone(), receipt.id.clone(), invoice.id.clone()],
+    };
+    let p = l.register_purchase_invoice(&input).unwrap();
+    assert!(p.has_document);
+    let names = |l: &Ledger| -> Vec<String> {
+        l.purchase_invoice(&p.id)
+            .unwrap()
+            .documents
+            .into_iter()
+            .map(|d| d.original_filename)
+            .collect()
+    };
+    assert_eq!(names(&l), ["factuur.pdf", "bon.png"]);
+
+    // More can be added later; they come after the existing ones and are audited.
+    let note = l
+        .add_document(b"%PDF-1.4 pakbon", "pakbon.pdf", "purchase_invoice")
+        .unwrap();
+    l.attach_purchase_documents(&p.id, &[note.id.clone(), receipt.id.clone()])
+        .unwrap();
+    assert_eq!(names(&l), ["factuur.pdf", "bon.png", "pakbon.pdf"]);
+    let audited: i64 = l
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'attach_documents' AND entity_id = ?1",
+            [&p.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(audited, 1);
+
+    // A document cannot belong to two purchase invoices.
+    let other = PurchaseInput {
+        supplier_reference: Some("M-2".into()),
+        document_ids: vec![receipt.id.clone()],
+        ..input.clone()
+    };
+    assert!(matches!(l.register_purchase_invoice(&other), Err(DbError::Invalid(_))));
+    assert!(matches!(
+        l.attach_purchase_documents(&p.id, &["onbekend".into()]),
+        Err(DbError::NotFound(_))
+    ));
+
+    // Links are permanent.
+    assert!(l.conn().execute("DELETE FROM purchase_invoice_document", []).is_err());
+    assert!(l
+        .conn()
+        .execute("UPDATE purchase_invoice_document SET position = 9", [])
+        .is_err());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn migration_keeps_existing_purchase_documents() {
+    use crate::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    for (_, sql) in &MIGRATIONS[..8] {
+        conn.execute_batch(sql).unwrap();
+    }
+    // Foreign keys are off on a raw connection, so minimal rows suffice.
+    conn.execute_batch(
+        "INSERT INTO document (id, sha256, original_filename, mime_type, size_bytes, document_type, retention_until)
+             VALUES ('doc1', 'abc', 'bon.pdf', 'application/pdf', 3, 'purchase_invoice', '2033-12-31');
+         INSERT INTO purchase_invoice (id, contact_id, invoice_date, description, subtotal_cents, vat_cents,
+             total_cents, entry_id, document_id)
+             VALUES ('p1', 'c1', '2026-10-01', 'met bon', 100, 21, 121, 'e1', 'doc1'),
+                    ('p2', 'c1', '2026-10-02', 'zonder bon', 100, 21, 121, 'e2', NULL);",
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[8].1).unwrap();
+    let links: Vec<(String, String, i64)> = conn
+        .prepare("SELECT purchase_invoice_id, document_id, position FROM purchase_invoice_document")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap();
+    assert_eq!(links, [("p1".to_string(), "doc1".to_string(), 1)]);
 }
 
 #[test]

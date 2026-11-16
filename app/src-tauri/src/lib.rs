@@ -1,6 +1,6 @@
 //! Tauri layer: opens the ledger and exposes commands to the UI.
 //! Keep this thin — business rules belong in `boekhoud-core` / `boekhoud-db`.
-//! Amounts arrive from the UI as text and are parsed here with `Money::parse`, never as floats.
+//! Amounts arrive from the UI as text and are parsed here with `Money::parse_input`, never as floats.
 
 mod backup;
 mod bank;
@@ -104,8 +104,8 @@ fn build_draft(input: NewEntry) -> CmdResult<EntryDraft> {
             ));
         }
         let amount = match (d.is_empty(), c.is_empty()) {
-            (false, true) => Money::parse(d, ',', Currency::EUR),
-            (true, false) => Money::parse(c, ',', Currency::EUR).map(|m| -m),
+            (false, true) => Money::parse_input(d, Currency::EUR),
+            (true, false) => Money::parse_input(c, Currency::EUR).map(|m| -m),
             (true, true) => return Err(format!("Regel {n}: vul een debet- of creditbedrag in.")),
             (false, false) => return Err(format!("Regel {n}: vul óf debet óf credit in, niet beide.")),
         }
@@ -404,7 +404,7 @@ pub fn run() {
             invoicing::register_purchase_invoice,
             invoicing::purchase_invoices,
             invoicing::purchase_invoice,
-            invoicing::attach_purchase_document,
+            invoicing::attach_purchase_documents,
             invoicing::register_purchase_payment,
             invoicing::upload_document,
             invoicing::document_content,

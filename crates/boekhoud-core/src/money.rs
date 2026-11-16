@@ -153,6 +153,12 @@ impl Money {
         Ok(Money::new(if neg { -cents } else { cents }, currency))
     }
 
+    /// Parse an amount typed by the user in Dutch notation, also accepting a dot as the decimal
+    /// separator ("12.50" is 12,50; see [`dutch_decimal`]).
+    pub fn parse_input(s: &str, currency: Currency) -> Result<Money, MoneyError> {
+        Money::parse(&dutch_decimal(s), ',', currency)
+    }
+
     /// Convert a foreign-currency amount to EUR using a rate in units of this currency
     /// per 1 EUR, scaled by 1,000,000 (see [`parse_rate_micro`]). Rounds half away from zero.
     pub fn to_eur(self, units_per_eur_micro: i64) -> Result<Money, MoneyError> {
@@ -213,6 +219,27 @@ pub fn parse_rate_micro(s: &str) -> Result<i64, MoneyError> {
     Ok(v)
 }
 
+/// Rewrite user input so a dot typed as decimal separator becomes a comma: when the text has no comma
+/// and its last dot is followed by one or two digits, that dot is the decimal separator ("12.5",
+/// "1.234.50"). Otherwise dots stay thousands separators ("1.234", "1.210,50").
+pub fn dutch_decimal(s: &str) -> String {
+    let t = s.trim();
+    if t.contains(',') {
+        return t.to_string();
+    }
+    match t.rfind('.') {
+        Some(i) => {
+            let tail = &t[i + 1..];
+            if (1..=2).contains(&tail.len()) && tail.chars().all(|c| c.is_ascii_digit()) {
+                format!("{},{tail}", &t[..i])
+            } else {
+                t.to_string()
+            }
+        }
+        None => t.to_string(),
+    }
+}
+
 /// Integer division rounding half away from zero.
 pub(crate) fn div_round_half_away(n: i128, d: i128) -> i128 {
     debug_assert!(d > 0);
@@ -228,6 +255,21 @@ pub(crate) fn div_round_half_away(n: i128, d: i128) -> i128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn user_input_accepts_a_dot_as_decimal_comma() {
+        let p = |s| Money::parse_input(s, Currency::EUR).unwrap().cents;
+        assert_eq!(p("12.50"), 1_250);
+        assert_eq!(p("12.5"), 1_250);
+        assert_eq!(p("-0.05"), -5);
+        assert_eq!(p("1.234.50"), 123_450);
+        assert_eq!(p("12,50"), 1_250);
+        assert_eq!(p("1.210,50"), 121_050);
+        // Three digits after a lone dot: a thousands separator, as before.
+        assert_eq!(p("1.234"), 123_400);
+        assert_eq!(p("42"), 4_200);
+        assert!(Money::parse_input("12.5.", Currency::EUR).is_err());
+    }
 
     #[test]
     fn parses_dutch_and_english_formats() {

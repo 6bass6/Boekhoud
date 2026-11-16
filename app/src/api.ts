@@ -265,7 +265,7 @@ export interface PurchaseDetail {
   lines: PurchaseLine[];
   subtotal_cents: number;
   vat_cents: number;
-  document_id: string | null;
+  documents: DocumentInfo[];
   payments: PaymentView[];
 }
 export interface PurchaseLineForm { description: string | null; account: string; net: string; tax_code: string; vat: string }
@@ -276,7 +276,7 @@ export interface PurchaseForm {
   due_date: string | null;
   description: string;
   paid_privately: boolean;
-  document_id: string | null;
+  document_ids: string[];
   lines: PurchaseLineForm[];
 }
 
@@ -440,7 +440,7 @@ export const api = {
   registerPurchase: (invoice: PurchaseForm) => invoke<PurchaseSummary>("register_purchase_invoice", { invoice }),
   purchaseInvoices: (year: number | null) => invoke<PurchaseSummary[]>("purchase_invoices", { year }),
   purchaseInvoice: (id: string) => invoke<PurchaseDetail>("purchase_invoice", { id }),
-  attachPurchaseDocument: (id: string, documentId: string) => invoke<void>("attach_purchase_document", { id, documentId }),
+  attachPurchaseDocuments: (id: string, documentIds: string[]) => invoke<void>("attach_purchase_documents", { id, documentIds }),
   registerPurchasePayment: (id: string, date: string, amountText: string) => invoke<string>("register_purchase_payment", { id, date, amountText }),
 
   uploadDocument: (filename: string, dataBase64: string, documentType: string) =>

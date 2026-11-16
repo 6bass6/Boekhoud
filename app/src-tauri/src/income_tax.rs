@@ -11,7 +11,7 @@ fn parse_amount(text: &str, label: &str) -> CmdResult<i64> {
     if text.trim().is_empty() {
         return Ok(0);
     }
-    match Money::parse(text, ',', Currency::EUR) {
+    match Money::parse_input(text, Currency::EUR) {
         Ok(m) if m.cents >= 0 => Ok(m.cents),
         _ => Err(format!("Ongeldig bedrag bij {label}: {text}")),
     }

@@ -36,30 +36,61 @@ export function DocumentViewer({ id, height = 520 }: { id: string; height?: numb
   );
 }
 
-/** File picker that uploads to the document store and returns the stored document. */
-export function DocumentUpload({ type, onUploaded, label = "Bestand kiezen…" }: { type: string; onUploaded: (d: DocumentInfo) => void; label?: string }) {
+/** File picker that uploads to the document store and returns the stored documents (several with `multiple`). */
+export function DocumentUpload({ type, onUploaded, label = "Bestand kiezen…", multiple = false }: {
+  type: string; onUploaded: (docs: DocumentInfo[]) => void; label?: string; multiple?: boolean;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
     <span>
       <label className="file-button">
         {busy ? "Uploaden…" : label}
-        <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml" hidden onChange={async (e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
+        <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml" multiple={multiple} hidden onChange={async (e) => {
+          const files = Array.from(e.target.files ?? []);
+          if (files.length === 0) return;
           setBusy(true);
           setError(null);
-          try {
-            onUploaded(await api.uploadDocument(file.name, await fileToBase64(file), type));
-          } catch (err) {
-            setError(String(err));
-          } finally {
-            setBusy(false);
-            e.target.value = "";
+          const done: DocumentInfo[] = [];
+          const failed: string[] = [];
+          for (const file of files) {
+            try {
+              done.push(await api.uploadDocument(file.name, await fileToBase64(file), type));
+            } catch (err) {
+              failed.push(`${file.name}: ${String(err)}`);
+            }
           }
+          if (failed.length) setError(failed.join("; "));
+          if (done.length) onUploaded(done);
+          setBusy(false);
+          e.target.value = "";
         }} />
       </label>
       {error && <span className="error small"> {error}</span>}
     </span>
+  );
+}
+
+/** Several documents: one tab per file, the chosen one shown below. `onRemove` adds a remove button per tab. */
+export function DocumentTabs({ docs, height, onRemove }: { docs: DocumentInfo[]; height?: number; onRemove?: (id: string) => void }) {
+  const [active, setActive] = useState<string | null>(null);
+  if (docs.length === 0) return null;
+  const shown = docs.find((d) => d.id === active) ?? docs[0];
+  return (
+    <div>
+      {docs.length > 1 || onRemove ? (
+        <div className="tabs doc-tabs">
+          {docs.map((d) => (
+            <span key={d.id} className="row">
+              <button className={d.id === shown.id ? "active" : ""} onClick={() => setActive(d.id)} title={d.original_filename}>
+                {d.original_filename}
+              </button>
+              {onRemove && <button className="link small" title="Weghalen" onClick={() => onRemove(d.id)}>×</button>}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <DocumentViewer key={shown.id} id={shown.id} height={height} />
+    </div>
   );
 }

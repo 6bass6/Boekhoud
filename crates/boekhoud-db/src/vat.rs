@@ -257,7 +257,9 @@ impl Ledger {
             ));
         }
         let missing_docs: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM purchase_invoice p WHERE p.document_id IS NULL AND p.invoice_date BETWEEN ?1 AND ?2
+            "SELECT COUNT(*) FROM purchase_invoice p
+             WHERE NOT EXISTS (SELECT 1 FROM purchase_invoice_document d WHERE d.purchase_invoice_id = p.id)
+               AND p.invoice_date BETWEEN ?1 AND ?2
                AND NOT EXISTS (SELECT 1 FROM journal_entry r WHERE r.reverses_entry_id = p.entry_id)",
             params![iso(start), iso(end)],
             |r| r.get(0),

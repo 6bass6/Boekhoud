@@ -10,9 +10,16 @@ export function formatEuro(cents: number): string {
   return `${negative ? "-" : ""}€ ${whole},${abs.slice(-2)}`;
 }
 
-/** Parse Dutch amount text ("1.210,50") into cents; null when empty or invalid. */
+/** A dot typed as decimal separator becomes a comma: no comma in the text and the last dot is
+ *  followed by one or two digits ("12.50" -> "12,50"). Same rule as `dutch_decimal` in Rust. */
+export function dutchDecimal(text: string): string {
+  const t = text.trim();
+  return t.includes(",") ? t : t.replace(/\.(\d{1,2})$/, ",$1");
+}
+
+/** Parse Dutch amount text ("1.210,50", also "12.50") into cents; null when empty or invalid. */
 export function parseCents(text: string): number | null {
-  const t = text.trim().replace(/[.\s]/g, "");
+  const t = dutchDecimal(text).replace(/[.\s]/g, "");
   if (!/^\d*(,\d{0,2})?$/.test(t) || t === "" || t === ",") return null;
   const [whole, frac = ""] = t.split(",");
   const cents = Number(whole || "0") * 100 + Number(frac.padEnd(2, "0"));
@@ -60,7 +67,7 @@ export function formatQuantity(milli: number): string {
 
 /** Parse "1,5" -> 1500 thousandths; null when invalid. */
 export function parseQuantity(text: string): number | null {
-  const t = text.trim().replace(/\./g, "");
+  const t = dutchDecimal(text).replace(/\./g, "");
   const m = /^(-?)(\d*)(?:,(\d{0,3}))?$/.exec(t);
   if (!m || (m[2] === "" && !m[3])) return null;
   const v = Number(m[2] || "0") * 1000 + Number((m[3] ?? "").padEnd(3, "0"));

@@ -23,7 +23,7 @@ fn amount(s: &str, what: &str) -> CmdResult<i64> {
     if t.is_empty() {
         return Ok(0);
     }
-    Money::parse(t, ',', Currency::EUR)
+    Money::parse_input(t, Currency::EUR)
         .map(|m| m.cents)
         .map_err(|_| format!("Ongeldig bedrag bij {what}: {s}"))
 }
@@ -410,7 +410,8 @@ pub struct PurchaseForm {
     due_date: Option<String>,
     description: String,
     paid_privately: bool,
-    document_id: Option<String>,
+    #[serde(default)]
+    document_ids: Vec<String>,
     lines: Vec<PurchaseLineForm>,
 }
 
@@ -444,7 +445,7 @@ pub fn register_purchase_invoice(state: State<AppState>, invoice: PurchaseForm) 
         description: invoice.description,
         lines,
         paid_privately: invoice.paid_privately,
-        document_id: clean(invoice.document_id),
+        document_ids: invoice.document_ids,
     };
     with_ledger(&state, |l| l.register_purchase_invoice(&input))
 }
@@ -460,8 +461,8 @@ pub fn purchase_invoice(state: State<AppState>, id: String) -> CmdResult<Purchas
 }
 
 #[tauri::command]
-pub fn attach_purchase_document(state: State<AppState>, id: String, document_id: String) -> CmdResult<()> {
-    with_ledger(&state, |l| l.attach_purchase_document(&id, &document_id))
+pub fn attach_purchase_documents(state: State<AppState>, id: String, document_ids: Vec<String>) -> CmdResult<()> {
+    with_ledger(&state, |l| l.attach_purchase_documents(&id, &document_ids))
 }
 
 #[tauri::command]

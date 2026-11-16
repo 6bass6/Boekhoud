@@ -42,7 +42,7 @@ full test suite + the NSIS/MSI installer build on Windows. The installer is uplo
 |---|---|
 | **Overzicht** | Dashboard: revenue, costs, result, bank, receivables, payables, VAT position, to-do list, hours progress, monthly chart. Tiles link to the screens behind them. |
 | **Verkoopfacturen** | Draft → issue sales invoices for talks. Issue checks Dutch invoice requirements, assigns a gapless number per year, posts to VRK, freezes seller/buyer details, archives the PDF. Credit notes, manual payments, PDF preview. |
-| **Inkoopfacturen** | Register purchase invoices with the receipt shown next to the form; VAT incl. reverse charge; "paid privately" option; duplicate detection; attach receipt later; payments. |
+| **Inkoopfacturen** | Register purchase invoices with any number of documents (invoice, receipt, …) shown as tabs next to the form; VAT incl. reverse charge; "paid privately" option; duplicate detection; attach more documents later (links are permanent); payments. |
 | **Platformen** | Import Apple financial report / Google Play earnings report; enter Apple euro proceeds per currency; book as one PLT entry; revenue per app. |
 | **Bank** | Import CAMT.053 / CSV; skip duplicates; proposals; process into entries (invoice, platform payout, account with VAT split, private, ignore); reconciliation with the statement balance. |
 | **Contacten** | Customers, suppliers, platforms (roles, VAT id, default account/VAT code). |
@@ -108,6 +108,8 @@ app/src-tauri/src        Thin Tauri layer: lib.rs (state, core commands, data di
 app/src                  React UI: App.tsx (navigation), api.ts (typed invoke wrappers), money.ts,
                          hooks.ts (useLoad), views/*.tsx, components/DocumentViewer.tsx, styles.css
 ```
+
+Amounts typed in the UI accept a dot as decimal separator ("12.50"; `Money::parse_input`, `dutchDecimal` in `money.ts`).
 
 Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money::parse(…, ',')` →
 `Ledger` method → (inside one transaction) validation → `post_in_tx` → audit log → commit.

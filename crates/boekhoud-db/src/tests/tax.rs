@@ -63,7 +63,7 @@ fn vat_return_rubrics_icp_and_filing() {
             },
         ],
         paid_privately: false,
-        document_id: None,
+        document_ids: vec![],
     })
     .unwrap();
     // A manual booking with VAT but without a code triggers a warning.

@@ -110,7 +110,7 @@ pub struct EurForm {
 pub fn book_platform_report(state: State<AppState>, id: String, amounts: Vec<EurForm>) -> CmdResult<String> {
     let mut eur = Vec::new();
     for a in amounts {
-        let cents = Money::parse(a.eur.trim(), ',', Currency::EUR)
+        let cents = Money::parse_input(a.eur.trim(), Currency::EUR)
             .map_err(|_| format!("Ongeldig euro-bedrag voor {}: {}", a.currency, a.eur))?
             .cents;
         eur.push(EurAmount {
