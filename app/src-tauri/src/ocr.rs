@@ -30,16 +30,16 @@ mod win {
         let stream = InMemoryRandomAccessStream::new()?;
         let writer = DataWriter::CreateDataWriter(&stream)?;
         writer.WriteBytes(bytes)?;
-        writer.StoreAsync()?.get()?;
-        writer.FlushAsync()?.get()?;
+        writer.StoreAsync()?.join()?;
+        writer.FlushAsync()?.join()?;
         writer.DetachStream()?;
         stream.Seek(0)?;
         Ok(stream)
     }
 
     fn bitmap_from(stream: &InMemoryRandomAccessStream) -> Result<SoftwareBitmap> {
-        let decoder = BitmapDecoder::CreateAsync(stream)?.get()?;
-        let bitmap = decoder.GetSoftwareBitmapAsync()?.get()?;
+        let decoder = BitmapDecoder::CreateAsync(stream)?.join()?;
+        let bitmap = decoder.GetSoftwareBitmapAsync()?.join()?;
         SoftwareBitmap::Convert(&bitmap, BitmapPixelFormat::Bgra8)
     }
 
@@ -61,7 +61,7 @@ mod win {
             // Too large for the engine: skip this image rather than fail the whole document.
             return Ok(String::new());
         }
-        let result = engine.RecognizeAsync(bitmap)?.get()?;
+        let result = engine.RecognizeAsync(bitmap)?.join()?;
         let lines = result.Lines()?;
         let mut out = String::new();
         for i in 0..lines.Size()? {
@@ -77,7 +77,7 @@ mod win {
         if mime_type != "application/pdf" {
             return ocr(&engine, &bitmap_from(&stream)?);
         }
-        let doc = PdfDocument::LoadFromStreamAsync(&stream)?.get()?;
+        let doc = PdfDocument::LoadFromStreamAsync(&stream)?.join()?;
         let width = PDF_WIDTH.min(OcrEngine::MaxImageDimension()?);
         let mut text = String::new();
         for i in 0..doc.PageCount()?.min(MAX_PAGES) {
@@ -85,7 +85,7 @@ mod win {
             let options = PdfPageRenderOptions::new()?;
             options.SetDestinationWidth(width)?;
             let out = InMemoryRandomAccessStream::new()?;
-            page.RenderWithOptionsToStreamAsync(&out, &options)?.get()?;
+            page.RenderWithOptionsToStreamAsync(&out, &options)?.join()?;
             out.Seek(0)?;
             text.push_str(&ocr(&engine, &bitmap_from(&out)?)?);
         }
