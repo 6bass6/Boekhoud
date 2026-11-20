@@ -165,7 +165,7 @@ function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) =>
   const [newContact, setNewContact] = useState<Partial<Contact> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
-  const [readResult, setReadResult] = useState<{ file: string; source: string; filled: string[]; supplier: PurchaseSuggestion | null } | null>(null);
+  const [readResult, setReadResult] = useState<{ file: string; source: string; filled: string[]; supplier: PurchaseSuggestion | null; currency: string | null } | null>(null);
 
   const purchaseCodes = (taxCodes.data ?? []).filter((t) => t.kind !== "sales");
   const setLine = (i: number, patch: Partial<PurchaseLineForm>) =>
@@ -216,7 +216,7 @@ function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) =>
       }
       setForm(next);
       const unknownSupplier = !s.contact_id && (s.supplier_name || s.supplier_vat || s.supplier_kvk) ? s : null;
-      setReadResult({ file: doc.original_filename, source: s.source, filled, supplier: unknownSupplier });
+      setReadResult({ file: doc.original_filename, source: s.source, filled, supplier: unknownSupplier, currency: s.foreign_currency });
     }).catch((e) => setError(String(e))).finally(() => setReading(false));
   };
 
@@ -242,6 +242,10 @@ function PurchaseEditor({ onDone, correcting }: { onDone: (id: string | null) =>
               ? <>Ingevuld uit <strong>{readResult.file}</strong>: {readResult.filled.join(", ")}.{" "}
                   {readResult.source === "ubl" ? "Uit de e-factuur gelezen." : <strong>Automatisch herkend: controleer alles voordat je boekt.</strong>}</>
               : <>Uit <strong>{readResult.file}</strong> kon niets nieuws worden ingevuld; velden die al gevuld waren zijn niet aangepast.</>}
+            {readResult.currency && (
+              <div style={{ marginTop: 6 }}>De bedragen op deze factuur zijn in {readResult.currency} en zijn daarom niet ingevuld.
+                Zoek het betaalde bedrag in euro op in je bankafschrift en vul dat zelf in.</div>
+            )}
             {readResult.supplier && (
               <div className="row gap" style={{ marginTop: 6 }}>
                 <span>Leverancier niet gevonden: {[readResult.supplier.supplier_name, readResult.supplier.supplier_vat, readResult.supplier.supplier_kvk && `KvK ${readResult.supplier.supplier_kvk}`].filter(Boolean).join(" · ")}</span>

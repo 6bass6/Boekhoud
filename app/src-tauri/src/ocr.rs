@@ -14,6 +14,7 @@ pub fn recognise(_bytes: &[u8], _mime_type: &str) -> Result<String, String> {
 
 #[cfg(windows)]
 mod win {
+    use boekhoud_import::invoice::{rows_from_words, OcrWord};
     use windows::core::{Result, HSTRING};
     use windows::Data::Pdf::{PdfDocument, PdfPageRenderOptions};
     use windows::Globalization::Language;
@@ -62,13 +63,21 @@ mod win {
             return Ok(String::new());
         }
         let result = engine.RecognizeAsync(bitmap)?.join()?;
-        let lines = result.Lines()?;
-        let mut out = String::new();
-        for i in 0..lines.Size()? {
-            out.push_str(&lines.GetAt(i)?.Text()?.to_string_lossy());
-            out.push('\n');
+        // The engine returns table columns as separate lines; rebuild visual rows from word positions.
+        let mut words = Vec::new();
+        for line in result.Lines()? {
+            for word in line.Words()? {
+                let r = word.BoundingRect()?;
+                words.push(OcrWord {
+                    text: word.Text()?.to_string_lossy(),
+                    x: r.X,
+                    y: r.Y,
+                    width: r.Width,
+                    height: r.Height,
+                });
+            }
         }
-        Ok(out)
+        Ok(rows_from_words(&words))
     }
 
     pub fn recognise(bytes: &[u8], mime_type: &str) -> Result<String> {

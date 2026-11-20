@@ -133,3 +133,83 @@ mod tests {
         assert_eq!(date("Oct 1, 2026", true), NaiveDate::from_ymd_opt(2026, 10, 1));
     }
 }
+
+/// A recognised word and its box on the page (any unit, y pointing down).
+#[derive(Debug, Clone)]
+pub struct OcrWord {
+    pub text: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// Rebuild visual rows from OCR words. OCR engines return table columns as separate blocks (all labels,
+/// then all amounts); grouping words by vertical position puts "Totaal" and "€ 12,10" back on one line.
+/// Words in a row are joined by one space, or two where the gap is wide (a column break).
+pub fn rows_from_words(words: &[OcrWord]) -> String {
+    let mut sorted: Vec<&OcrWord> = words.iter().filter(|w| !w.text.trim().is_empty()).collect();
+    sorted.sort_by(|a, b| (a.y + a.height / 2.0).total_cmp(&(b.y + b.height / 2.0)));
+    // Each row: (centre of its first word, height of its first word, words).
+    let mut rows: Vec<(f32, f32, Vec<&OcrWord>)> = Vec::new();
+    for w in sorted {
+        let cy = w.y + w.height / 2.0;
+        match rows
+            .iter_mut()
+            .rev()
+            .find(|(rcy, rh, _)| (rcy - cy).abs() < rh.min(w.height) / 2.0)
+        {
+            Some(row) => row.2.push(w),
+            None => rows.push((cy, w.height, vec![w])),
+        }
+    }
+    let mut out = String::new();
+    for (_, _, mut ws) in rows {
+        ws.sort_by(|a, b| a.x.total_cmp(&b.x));
+        let mut prev: Option<&OcrWord> = None;
+        for w in ws {
+            if let Some(p) = prev {
+                out.push_str(if w.x - (p.x + p.width) > p.height * 1.5 {
+                    "  "
+                } else {
+                    " "
+                });
+            }
+            out.push_str(w.text.trim());
+            prev = Some(w);
+        }
+        out.push('\n');
+    }
+    out
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    fn w(text: &str, x: f32, y: f32) -> OcrWord {
+        OcrWord {
+            text: text.into(),
+            x,
+            y,
+            width: 10.0 * text.len() as f32,
+            height: 20.0,
+        }
+    }
+
+    #[test]
+    fn columns_are_joined_into_rows() {
+        // OCR order: label column first, then amount column; second row slightly skewed.
+        let words = [
+            w("Subtotaal", 0.0, 100.0),
+            w("Btw", 0.0, 130.0),
+            w("21%", 40.0, 130.0),
+            w("€", 400.0, 98.0),
+            w("50,00", 420.0, 98.0),
+            w("€", 400.0, 133.0),
+            w("10,50", 420.0, 133.0),
+        ];
+        assert_eq!(rows_from_words(&words), "Subtotaal  € 50,00\nBtw 21%  € 10,50\n");
+        assert_eq!(rows_from_words(&[]), "");
+    }
+}

@@ -296,6 +296,8 @@ export interface PurchaseSuggestion {
   vat_cents: number | null;
   total_cents: number | null;
   vat_rate_bp: number | null;
+  /** Amounts are in this currency (e.g. "USD") and were left empty. */
+  foreign_currency: string | null;
   tax_code: string | null;
   account: string | null;
 }

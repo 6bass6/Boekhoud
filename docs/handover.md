@@ -144,6 +144,11 @@ Data flow: UI form (amounts as Dutch text) → Tauri command parses with `Money:
 11. ~~UI has no React error boundary~~ — done: `components/ErrorBoundary.tsx` wraps each screen; a render error shows a Dutch message with "Probeer opnieuw" and the navigation keeps working.
 12. **UI was only checked on Linux** (WebKitGTK under Xvfb). Real Windows/WebView2 testing by the owner
     is still needed (PDF iframe preview, file pickers, opening documents with `explorer`).
+13. **Invoice reading (OCR) was tuned on a handful of real invoices** (kept outside the repo; tests use
+    fictional look-alikes). Foreign-currency invoices without a euro total deliberately get no amounts.
+    No supplier name when the invoice shows no legal form (B.V., LLC, …). The owner's PC has no MSVC
+    build tools (disk space): the core crates can be tested locally with the GNU toolchain plus an
+    unpacked MSYS2 binutils (`as`/`dlltool`) on PATH; the app crate is only checked in CI.
 
 ## 5. Recommended next tasks (in order)
 

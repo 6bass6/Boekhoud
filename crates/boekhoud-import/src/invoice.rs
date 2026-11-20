@@ -9,6 +9,7 @@ use serde::Serialize;
 use std::sync::LazyLock;
 
 use crate::text::amount_cents;
+pub use crate::text::{rows_from_words, OcrWord};
 use crate::{ImportError, Result};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -28,11 +29,22 @@ pub struct InvoiceProposal {
     pub total_cents: Option<i64>,
     /// VAT rate in basis points (2100 = 21%) when a single rate was found.
     pub vat_rate_bp: Option<i64>,
+    /// Set when the amounts are in another currency than euro (e.g. "USD"). The amounts are then left
+    /// empty: the owner looks up the euro amount actually paid (bank statement) instead.
+    pub foreign_currency: Option<String>,
 }
 
 impl InvoiceProposal {
-    /// Fill missing amounts from the other two and drop a set that does not add up.
+    /// Fill missing amounts from the other two and drop a set that does not add up. Foreign-currency
+    /// amounts are dropped entirely.
     fn complete_amounts(&mut self) {
+        if self.foreign_currency.is_some() {
+            self.net_cents = None;
+            self.vat_cents = None;
+            self.total_cents = None;
+            self.vat_rate_bp = None;
+            return;
+        }
         match (self.net_cents, self.vat_cents, self.total_cents) {
             (Some(n), Some(v), None) => self.total_cents = Some(n + v),
             (None, Some(v), Some(t)) if v <= t => self.net_cents = Some(t - v),
@@ -140,7 +152,11 @@ fn ubl_field(p: &mut InvoiceProposal, path: &[String], value: String) {
     let joined = path.join("/");
     let tail = |suffix: &str| joined.ends_with(suffix);
     let depth = path.len();
-    if depth == 2 && tail("/ID") {
+    if depth == 2 && tail("/DocumentCurrencyCode") {
+        if !value.eq_ignore_ascii_case("EUR") {
+            p.foreign_currency = Some(value.to_uppercase());
+        }
+    } else if depth == 2 && tail("/ID") {
         p.invoice_number.get_or_insert(value);
     } else if depth == 2 && tail("/IssueDate") {
         p.invoice_date = p.invoice_date.or(iso_date(&value));
@@ -200,15 +216,29 @@ fn normalise_id(s: &str) -> String {
 static VAT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b([A-Z]{2})[ .]?([0-9][0-9A-Z .]{6,13}[0-9A-Z])\b").unwrap());
 static NL_VAT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bNL[\s.]?(\d{4}[\s.]?\d{2}[\s.]?\d{3})[\s.]?B[\s.]?(\d{2})\b").unwrap());
+    // The two digits after B tolerate OCR's O/I/l for 0/1 ("B01" read as "BOI").
+    LazyLock::new(|| {
+        Regex::new(r"(?i)\bNL[\s.]?(\d{4}[\s.]?\d{2}[\s.]?\d{3})[\s.]?B[\s.]?([0-9OIl]{2})\b").unwrap()
+    });
+/// OCR splitting the last decimal of an amount off ("85,1 5" for "85,15").
+static SPLIT_DECIMAL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d[.,]\d) (\d)\b").unwrap());
 static IBAN_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\b([A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?)\b").unwrap());
 static KVK_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?:kvk|k\.v\.k\.|kamer van koophandel|coc|chamber of commerce)[^0-9]{0,20}(\d{8})\b").unwrap()
+    Regex::new(r"(?i)(?:kvk|k\.v\.k\.|kamer van koophandel|c\.?o\.?c\.?|chamber of commerce)[^0-9]{0,20}(\d{8})\b")
+        .unwrap()
 });
 static AMOUNT_RE: LazyLock<Regex> = LazyLock::new(|| {
     // 1.234,56 | 1,234.56 | 1234,56 | 12.10 (two decimals required, so dates and numbers are skipped)
     Regex::new(r"(-?\d{1,3}(?:[.,\s]\d{3})*[.,]\d{2}|-?\d+[.,]\d{2})(?:\D|$)").unwrap()
+});
+/// A company name ending in a legal form ("Voorbeeld B.V.", "Example Corporation Ltd."). Greedy, so the
+/// last legal form in the cell ends the name.
+static LEGAL_NAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"^(.{1,60}\b(?:B\.\s?V|BV|N\.\s?V|V\.O\.F|VOF|LLC|Ltd|Limited|GmbH|Inc|Corp|Corporation|SARL|SRL|ApS|Pty|PLC)\.?)(?:[^\p{L}]|$)",
+    )
+    .unwrap()
 });
 static PERCENT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b(\d{1,2}(?:[.,]\d{1,2})?)\s?%").unwrap());
 static NUMERIC_DATE_RE: LazyLock<Regex> =
@@ -352,6 +382,8 @@ fn value_after_label(lines: &[&str], labels: &[&str]) -> Option<String> {
 /// Read a proposal from invoice text. `own_ids` are the owner's own VAT number, KvK number and IBANs
 /// (normalised), which also appear on received invoices and must not be taken for the supplier's.
 pub fn from_text(text: &str, own_ids: &[String]) -> InvoiceProposal {
+    let text = SPLIT_DECIMAL_RE.replace_all(text, "$1$2");
+    let text = text.as_ref();
     let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
     let own = |id: &str| own_ids.iter().any(|o| o == id);
     let mut p = InvoiceProposal {
@@ -361,7 +393,8 @@ pub fn from_text(text: &str, own_ids: &[String]) -> InvoiceProposal {
 
     // Identifiers. Dutch VAT numbers first (most reliable pattern), then other EU formats.
     for c in NL_VAT_RE.captures_iter(text) {
-        let id = format!("NL{}B{}", normalise_id(&c[1]), &c[2]);
+        let check = c[2].to_uppercase().replace('O', "0").replace(['I', 'L'], "1");
+        let id = format!("NL{}B{}", normalise_id(&c[1]), check);
         if !own(&id) {
             p.vat_number = Some(id);
             break;
@@ -385,7 +418,19 @@ pub fn from_text(text: &str, own_ids: &[String]) -> InvoiceProposal {
         }
     }
     for c in IBAN_RE.captures_iter(text) {
-        let id = normalise_id(&c[1]);
+        let mut id = normalise_id(&c[1]);
+        if !iban_valid(&id) && id.starts_with("NL") && id.len() == 18 {
+            // Dutch bank codes (positions 5-8) are letters: undo OCR's 0/1 for O/I ("RAB0" for "RABO").
+            let bank: String = id[4..8]
+                .chars()
+                .map(|ch| match ch {
+                    '0' => 'O',
+                    '1' => 'I',
+                    c => c,
+                })
+                .collect();
+            id = format!("{}{}{}", &id[..4], bank, &id[8..]);
+        }
         if iban_valid(&id) && !own(&id) {
             p.iban = Some(id);
             break;
@@ -397,6 +442,14 @@ pub fn from_text(text: &str, own_ids: &[String]) -> InvoiceProposal {
             break;
         }
     }
+
+    // Supplier name: the first table cell (cells split on wide gaps and bullets) that ends in a legal
+    // form, is short, and is not the owner's own name.
+    p.supplier_name = lines
+        .iter()
+        .flat_map(|l| l.split("  ").flat_map(|c| c.split(['•', '|'])))
+        .filter_map(|cell| LEGAL_NAME_RE.captures(cell.trim()).map(|c| c[1].trim().to_string()))
+        .find(|name| name.split_whitespace().count() <= 6 && !own(&normalise_id(name)));
 
     p.invoice_number = value_after_label(
         &lines,
@@ -410,9 +463,22 @@ pub fn from_text(text: &str, own_ids: &[String]) -> InvoiceProposal {
             "invoice no",
             "invoice nr",
             "invoice #",
+            "invoice#",
             "rechnungsnummer",
         ],
-    );
+    )
+    .or_else(|| {
+        // A bare "Invoice 12345" (same line only: "Invoice Date …" must not grab the next line).
+        lines.iter().find_map(|l| {
+            let mut words = l.split_whitespace();
+            words.find(|w| w.eq_ignore_ascii_case("invoice"))?;
+            words
+                .next()
+                .filter(|t| t.chars().next().is_some_and(|c| c.is_ascii_alphanumeric()))
+                .filter(|t| t.chars().any(|c| c.is_ascii_digit()))
+                .map(str::to_string)
+        })
+    });
 
     // Dates: by label first, the first date in the text as fallback for the invoice date.
     for (i, line) in lines.iter().enumerate() {
@@ -460,13 +526,29 @@ pub fn from_text(text: &str, own_ids: &[String]) -> InvoiceProposal {
             .find_map(|l| dates_in(l).first().copied());
     }
 
-    // Amounts: the last amount on a labelled line. Labels from most to least specific.
+    // Amounts: the last amount on a labelled line. Labels from most to least specific. Invoices in a
+    // foreign currency often repeat the totals in euros ("Totaal in EUR € 22,56"): prefer those lines.
+    let is_euro = |l: &str| l.contains('€') || l.contains("EUR");
+    let has_euro = lines.iter().any(|l| is_euro(l) && !amounts_in(l).is_empty());
+    if !has_euro {
+        // Only amounts in another currency: no euro figure to propose.
+        let money_lines = || lines.iter().filter(|l| !amounts_in(l).is_empty());
+        p.foreign_currency = if money_lines().any(|l| l.contains('$') || l.contains("USD")) {
+            Some("USD".into())
+        } else if money_lines().any(|l| l.contains('£') || l.contains("GBP")) {
+            Some("GBP".into())
+        } else {
+            None
+        };
+    }
     let last_amount = |labels: &[&str], exclude: &[&str]| -> Option<i64> {
         for label in labels {
-            for line in lines.iter().rev() {
-                if lower_has(line, &[label]) && !lower_has(line, exclude) {
-                    if let Some(a) = amounts_in(line).last() {
-                        return Some(*a);
+            for euro_only in [has_euro, false] {
+                for line in lines.iter().rev() {
+                    if lower_has(line, &[label]) && !lower_has(line, exclude) && (!euro_only || is_euro(line)) {
+                        if let Some(a) = amounts_in(line).last() {
+                            return Some(*a);
+                        }
                     }
                 }
             }
@@ -483,16 +565,20 @@ pub fn from_text(text: &str, own_ids: &[String]) -> InvoiceProposal {
             "total incl",
             "totaalbedrag",
             "total amount",
+            "te voldoen",
             "totaal",
             "total",
+            "prijs",
+            "bedrag",
         ],
-        &["excl", "subtota", "btw-nummer", "btw nummer"],
+        &["excl", "subtota", "sub total", "btw-nummer", "btw nummer"],
     );
     p.net_cents = last_amount(
         &[
             "totaal excl",
             "subtotaal",
             "subtotal",
+            "sub total",
             "excl. btw",
             "excl btw",
             "total excl",
@@ -502,7 +588,7 @@ pub fn from_text(text: &str, own_ids: &[String]) -> InvoiceProposal {
         &[],
     );
     p.vat_cents = last_amount(
-        &["btw", "vat", "tax", "mwst", "tva"],
+        &["btw", "vat", "tax", "mwst", "tva", "belasting"],
         &["excl", "incl", "nummer", "number", "nr", "id", "total", "totaal"],
     )
     .or_else(|| {
@@ -513,7 +599,7 @@ pub fn from_text(text: &str, own_ids: &[String]) -> InvoiceProposal {
     });
     let rates: Vec<i64> = lines
         .iter()
-        .filter(|l| lower_has(l, &["btw", "vat", "tax", "mwst", "tva"]))
+        .filter(|l| lower_has(l, &["btw", "vat", "tax", "mwst", "tva", "belasting"]))
         .flat_map(|l| {
             PERCENT_RE
                 .captures_iter(l)
@@ -550,6 +636,7 @@ mod tests {
                     Omschrijving   Bedrag\nVPS november  € 40,00\nBackup  € 10,00\n\
                     Subtotaal € 50,00\nBtw 21% € 10,50\nTotaal te betalen € 60,50\n";
         let p = from_text(text, &[OWN.to_string()]);
+        assert_eq!(p.supplier_name.as_deref(), Some("Voorbeeld Hosting B.V."));
         assert_eq!(p.vat_number.as_deref(), Some("NL876543210B01"));
         assert_eq!(p.kvk_number.as_deref(), Some("87654321"));
         assert_eq!(p.iban.as_deref(), Some("NL91ABNA0417164300"));
@@ -577,6 +664,71 @@ mod tests {
             (Some(100_000), Some(0), Some(100_000))
         );
         assert_eq!(p.vat_rate_bp, Some(0));
+    }
+
+    #[test]
+    fn prefers_euro_totals_and_reads_supplier_name() {
+        // Fictional, in the row layout `rows_from_words` produces: dollars first, euro reference after.
+        let text = "Example  Example Cloud LLC\nFactuur  Btw-nummer: EU123456789\n\
+                    Factuurnummer  4455-1\nFactuurdatum  13 nov 2026\n\
+                    Subtotaal in USD  US$ 25,00\nBelasting (0%)  US$ 0,00\nTotaal in USD  US$ 25,00\n\
+                    Ter referentie in EUR:\nSubtotaal in EUR  € 22,56\nBelasting (0%)  € 0,00\n\
+                    Totaal in EUR  € 22,56\nBedrijfs-ID van Example Cloud LLC: 1234\n\
+                    Totaal in USD  US$ 25,00\n";
+        let p = from_text(text, &[]);
+        assert_eq!(p.supplier_name.as_deref(), Some("Example Cloud LLC"));
+        assert_eq!(p.vat_number.as_deref(), Some("EU123456789"));
+        assert_eq!(p.invoice_number.as_deref(), Some("4455-1"));
+        assert_eq!(p.invoice_date, Some(d(2026, 11, 13)));
+        assert_eq!(
+            (p.net_cents, p.vat_cents, p.total_cents),
+            (Some(2_256), Some(0), Some(2_256))
+        );
+        assert_eq!(p.vat_rate_bp, Some(0));
+    }
+
+    #[test]
+    fn reads_rows_with_ocr_noise() {
+        // "21%" misread as "210/0", a stray space inside "10,80", "c.o.c:" for the KvK number.
+        let text = "Voorbeeld Mail Corporation B.V.\nVAT No.NL876543210B01\nc.o.c:87654321\n\
+                    Bill To  Invoice#  9001\nVoorbeeld Apps  Invoice Date  26 Oct 2026\n\
+                    Sub Total  1 0,80\nNL VAT (210/0)  2,27\nTotal  €13,07\nBalance Due  €0,00\n";
+        let p = from_text(text, &[]);
+        assert_eq!(p.supplier_name.as_deref(), Some("Voorbeeld Mail Corporation B.V."));
+        assert_eq!(p.kvk_number.as_deref(), Some("87654321"));
+        assert_eq!(p.invoice_number.as_deref(), Some("9001"));
+        assert_eq!(p.invoice_date, Some(d(2026, 10, 26)));
+        assert_eq!(
+            (p.net_cents, p.vat_cents, p.total_cents),
+            (Some(1_080), Some(227), Some(1_307))
+        );
+        assert_eq!(p.vat_rate_bp, None);
+
+        let p = from_text(
+            "INVOICE\nExample Domains LLC  Invoice  12345\nInvoice Date 2026-10-25\nTotal Paid  USD $15.26\n",
+            &[],
+        );
+        assert_eq!(p.invoice_number.as_deref(), Some("12345"));
+        // Dollar-only invoice: currency flagged, no amounts proposed.
+        assert_eq!(p.foreign_currency.as_deref(), Some("USD"));
+        assert_eq!((p.net_cents, p.vat_cents, p.total_cents), (None, None, None));
+        // The owner's own name is skipped.
+        let p = from_text("Voorbeeld Apps B.V.\nAnder Bedrijf B.V.\n", &["VOORBEELDAPPSBV".into()]);
+        assert_eq!(p.supplier_name.as_deref(), Some("Ander Bedrijf B.V."));
+    }
+
+    #[test]
+    fn repairs_typical_ocr_slips() {
+        // "B01" read as "BOI", "RABO" read as "RAB0", and the last decimal split off.
+        let text = "Btw-nr: NL876543210 BOI\nIBAN: NL44RAB00123456789\n\
+                    Subtotaal  85,1 5\nBtw  0,00\nVrijgesteld  85,15  0,00  Totaal te voldoen  85,1 5\n";
+        let p = from_text(text, &[]);
+        assert_eq!(p.vat_number.as_deref(), Some("NL876543210B01"));
+        assert_eq!(p.iban.as_deref(), Some("NL44RABO0123456789"));
+        assert_eq!(
+            (p.net_cents, p.vat_cents, p.total_cents),
+            (Some(8_515), Some(0), Some(8_515))
+        );
     }
 
     #[test]
@@ -654,6 +806,14 @@ mod tests {
             (Some(10_000), Some(2_100), Some(12_100))
         );
         assert_eq!(p.vat_rate_bp, Some(2100));
+        assert_eq!(p.foreign_currency, None);
+        let usd = xml.replace(
+            "<cbc:ID>F-2026-77</cbc:ID>",
+            "<cbc:ID>F-2026-77</cbc:ID><cbc:DocumentCurrencyCode>USD</cbc:DocumentCurrencyCode>",
+        );
+        let p = from_ubl(usd.as_bytes()).unwrap();
+        assert_eq!(p.foreign_currency.as_deref(), Some("USD"));
+        assert_eq!((p.net_cents, p.total_cents, p.vat_rate_bp), (None, None, None));
         assert!(from_ubl(b"<Other/>").is_err());
     }
 }

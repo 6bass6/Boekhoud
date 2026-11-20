@@ -1,7 +1,7 @@
 //! Proposals for a purchase invoice read from its document (UBL exactly, PDF/image via local OCR).
 //! Only a proposal: the screen fills empty fields and the user checks everything before booking.
 
-use boekhoud_db::{Contact, VatRegime};
+use boekhoud_db::{Contact, TaxCode, VatRegime};
 use boekhoud_import::invoice::{from_text, from_ubl, InvoiceProposal};
 use serde::Serialize;
 use tauri::State;
@@ -26,6 +26,8 @@ pub struct PurchaseSuggestion {
     pub vat_cents: Option<i64>,
     pub total_cents: Option<i64>,
     pub vat_rate_bp: Option<i64>,
+    /// Amounts are in this other currency and were left empty (owner looks up the euro amount).
+    pub foreign_currency: Option<String>,
     /// Proposed VAT code and cost account (supplier defaults first).
     pub tax_code: Option<String>,
     pub account: Option<String>,
@@ -61,6 +63,20 @@ fn find_contact<'a>(contacts: &'a [Contact], p: &InvoiceProposal, text: &str) ->
         .max_by_key(|c| c.name.len())
 }
 
+/// The purchase VAT rate (from the VAT codes valid on the invoice date) that turns the net amount into the
+/// VAT amount, within a cent. For when OCR mangled the printed percentage ("210/0" for "21%").
+fn rate_from_amounts(codes: &[TaxCode], p: &InvoiceProposal) -> Option<i64> {
+    let (net, vat) = (p.net_cents?, p.vat_cents?);
+    if net <= 0 {
+        return None;
+    }
+    codes
+        .iter()
+        .filter(|t| t.kind == "purchase")
+        .filter_map(|t| t.rate_bp)
+        .find(|bp| (net * bp - vat * 10_000).abs() < 10_000)
+}
+
 #[tauri::command]
 pub async fn extract_purchase(state: State<'_, AppState>, document_id: String) -> CmdResult<PurchaseSuggestion> {
     let (info, bytes, own_ids) = with_ledger(&state, |l| {
@@ -68,7 +84,7 @@ pub async fn extract_purchase(state: State<'_, AppState>, document_id: String) -
         let mut own = Vec::new();
         if let Some(c) = l.company()? {
             own.extend(
-                [c.vat_number, c.kvk_number, c.iban]
+                [Some(c.legal_name), c.trade_name, c.vat_number, c.kvk_number, c.iban]
                     .into_iter()
                     .flatten()
                     .map(|s| norm(&s)),
@@ -103,23 +119,24 @@ pub async fn extract_purchase(state: State<'_, AppState>, document_id: String) -
             .invoice_date
             .unwrap_or_else(|| chrono::Local::now().date_naive());
         let regime = l.vat_regime_on(date)?;
+        let codes = l.tax_codes(date)?;
+        let vat_rate_bp = proposal.vat_rate_bp.or_else(|| rate_from_amounts(&codes, &proposal));
         let tax_code = contact.and_then(|c| c.default_tax_code.clone()).or_else(|| {
             // A domestic purchase code with the rate found on the invoice, valid on its date and regime.
-            let rate = proposal.vat_rate_bp?;
+            let rate = vat_rate_bp?;
             let foreign = proposal.vat_number.as_deref().is_some_and(|v| !v.starts_with("NL"));
             if foreign || regime == VatRegime::Kor {
                 return None;
             }
-            l.tax_codes(date)
-                .ok()?
-                .into_iter()
+            codes
+                .iter()
                 .find(|t| {
                     t.kind == "purchase"
                         && !t.reverse_charge
                         && t.rate_bp == Some(rate)
                         && t.regime.is_none_or(|r| r == regime)
                 })
-                .map(|t| t.code)
+                .map(|t| t.code.clone())
         });
         Ok(PurchaseSuggestion {
             source: proposal.source.clone(),
@@ -134,7 +151,8 @@ pub async fn extract_purchase(state: State<'_, AppState>, document_id: String) -
             net_cents: proposal.net_cents,
             vat_cents: proposal.vat_cents,
             total_cents: proposal.total_cents,
-            vat_rate_bp: proposal.vat_rate_bp,
+            vat_rate_bp,
+            foreign_currency: proposal.foreign_currency.clone(),
             tax_code,
             account: contact.and_then(|c| c.default_account.clone()),
         })
@@ -154,6 +172,37 @@ mod tests {
             is_supplier: true,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn rate_is_derived_from_net_and_vat() {
+        let code = |code: &str, kind: &str, bp: i64| TaxCode {
+            code: code.into(),
+            valid_from: chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+            valid_until: None,
+            name: code.into(),
+            kind: kind.into(),
+            rate_bp: Some(bp),
+            rubric: None,
+            icp: false,
+            reverse_charge: false,
+            regime: None,
+            note: None,
+        };
+        let codes = [
+            code("V21", "sales", 2100),
+            code("I21", "purchase", 2100),
+            code("I9", "purchase", 900),
+        ];
+        let p = |net, vat| InvoiceProposal {
+            net_cents: Some(net),
+            vat_cents: Some(vat),
+            ..Default::default()
+        };
+        assert_eq!(rate_from_amounts(&codes, &p(1_080, 227)), Some(2100));
+        assert_eq!(rate_from_amounts(&codes, &p(1_000, 90)), Some(900));
+        assert_eq!(rate_from_amounts(&codes, &p(1_000, 150)), None);
+        assert_eq!(rate_from_amounts(&codes, &p(0, 0)), None);
     }
 
     #[test]

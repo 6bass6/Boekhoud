@@ -49,8 +49,13 @@ in parallel with a spreadsheet for at least one VAT period.
   verified backup; a database from a newer version is refused). See `docs/releasing.md`.
 - **Phase 5** (partly): purchase-invoice proposals from the uploaded document. UBL e-invoices are read
   exactly; PDFs and photos via the Windows OCR engine (`app/src-tauri/src/ocr.rs`) and text rules
-  (`boekhoud-import/src/invoice.rs`). Supplier matched by VAT number, KvK number or name; only empty
-  fields are filled and nothing is booked. **Not yet:** confidence per field, logging of runs,
+  (`boekhoud-import/src/invoice.rs`). OCR words are regrouped into visual rows by position (the engine
+  returns table columns as separate blocks); supplier name from a cell ending in a legal form; euro
+  totals preferred when an invoice also shows another currency; invoices only in USD/GBP (or a UBL
+  with a non-EUR currency) get **no amounts** — the owner enters the euro amount paid from the bank
+  statement; VAT rate derived from net and VAT against the purchase VAT codes when the printed rate is
+  unreadable; common OCR slips repaired ("85,1 5", "BOI" for "B01", "RAB0" for "RABO"). Supplier matched
+  by VAT number, KvK number or name; only empty fields are filled and nothing is booked. **Not yet:** confidence per field, logging of runs,
   multi-rate line split, recurring-expense detection.
 - **Next:** year-end closing, then the rest of phase 5 (recurring-expense detection) and
   phase 7 items (XAF export, backup encryption, code signing).
