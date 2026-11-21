@@ -3,7 +3,7 @@
 //! Text is encoded as WinAnsi (covers Dutch accents and the euro sign). The caller supplies all
 //! strings already formatted; this crate only lays them out.
 
-use pdf_writer::{Content, Finish, Name, Pdf, Rect, Ref, Str, TextStr};
+use pdf_writer::{Content, Filter, Finish, Name, Pdf, Rect, Ref, Str, TextStr};
 
 #[derive(Debug, Clone, Default)]
 pub struct Party {
@@ -38,6 +38,48 @@ pub struct InvoicePdf {
     /// Footer line (legal name, KvK, btw-id, IBAN).
     pub footer: String,
     pub document_title: String,
+    /// Optional company logo as JPEG bytes, printed top left.
+    pub logo: Option<Vec<u8>>,
+}
+
+/// Size and colour components of a baseline/progressive JPEG, read from its SOF marker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JpegInfo {
+    pub width: u16,
+    pub height: u16,
+    pub components: u8,
+}
+
+/// Read a JPEG header. Only greyscale and RGB are accepted (CMYK needs special handling in PDF).
+pub fn jpeg_info(data: &[u8]) -> Option<JpegInfo> {
+    if !data.starts_with(&[0xFF, 0xD8]) {
+        return None;
+    }
+    let mut i = 2;
+    while i + 4 <= data.len() {
+        if data[i] != 0xFF {
+            return None;
+        }
+        let marker = data[i + 1];
+        if marker == 0xFF {
+            i += 1;
+            continue;
+        }
+        let len = u16::from_be_bytes([data[i + 2], data[i + 3]]) as usize;
+        // SOF0..SOF15 except DHT (C4), JPG (C8) and DAC (CC).
+        if (0xC0..=0xCF).contains(&marker) && ![0xC4, 0xC8, 0xCC].contains(&marker) {
+            let seg = data.get(i + 4..i + 2 + len)?;
+            let info = JpegInfo {
+                height: u16::from_be_bytes([*seg.get(1)?, *seg.get(2)?]),
+                width: u16::from_be_bytes([*seg.get(3)?, *seg.get(4)?]),
+                components: *seg.get(5)?,
+            };
+            let ok = info.width > 0 && info.height > 0 && matches!(info.components, 1 | 3);
+            return ok.then_some(info);
+        }
+        i += 2 + len;
+    }
+    None
 }
 
 const PAGE_W: f32 = 595.0;
@@ -45,6 +87,9 @@ const PAGE_H: f32 = 842.0;
 const MARGIN: f32 = 50.0;
 const REGULAR: Name = Name(b"F1");
 const BOLD: Name = Name(b"F2");
+const LOGO: Name = Name(b"Im1");
+const LOGO_MAX_H: f32 = 80.0;
+const LOGO_MAX_W: f32 = 160.0;
 
 /// Helvetica / Helvetica-Bold glyph widths (1/1000 em) for ASCII 32..=126.
 const HELV: [u16; 95] = [
@@ -231,8 +276,19 @@ pub fn render_invoice(inv: &InvoicePdf) -> Vec<u8> {
         y: PAGE_H - MARGIN,
     };
 
-    // Seller (top left) and title (top right).
-    let top = w.y;
+    // Logo centred at the top (if any); below it the seller (left) and the title (right).
+    let logo = inv.logo.as_deref().and_then(|d| jpeg_info(d).map(|i| (d, i)));
+    let mut top = w.y;
+    if let Some((_, info)) = logo {
+        let scale = (LOGO_MAX_H / info.height as f32).min(LOGO_MAX_W / info.width as f32);
+        let (lw, lh) = (info.width as f32 * scale, info.height as f32 * scale);
+        let c = w.content();
+        c.save_state();
+        c.transform([lw, 0.0, 0.0, lh, (PAGE_W - lw) / 2.0, top + 10.0 - lh]);
+        c.x_object(LOGO);
+        c.restore_state();
+        top -= lh + 6.0;
+    }
     w.text(MARGIN, top - 4.0, &inv.seller.name, 15.0, true);
     let mut y = top - 22.0;
     for l in &inv.seller.lines {
@@ -242,7 +298,7 @@ pub fn render_invoice(inv: &InvoicePdf) -> Vec<u8> {
     w.text_right(PAGE_W - MARGIN, top - 4.0, &inv.title, 20.0, true);
 
     // Buyer (left) and meta (right).
-    let block = top - 120.0;
+    let block = (top - 120.0).min(y - 22.0);
     w.text(MARGIN, block, &inv.buyer.name, 10.0, true);
     let mut by = block - 13.0;
     for l in &inv.buyer.lines {
@@ -333,6 +389,20 @@ pub fn render_invoice(inv: &InvoicePdf) -> Vec<u8> {
     let font = Ref::new(3);
     let font_bold = Ref::new(4);
     let info = Ref::new(5);
+    let logo_id = Ref::new(6);
+    if let Some((data, li)) = logo {
+        let mut img = pdf.image_xobject(logo_id, data);
+        img.filter(Filter::DctDecode);
+        img.width(li.width as i32);
+        img.height(li.height as i32);
+        if li.components == 1 {
+            img.color_space().device_gray();
+        } else {
+            img.color_space().device_rgb();
+        }
+        img.bits_per_component(8);
+        img.finish();
+    }
     let first_page = 10;
     let page_ids: Vec<Ref> = (0..total).map(|i| Ref::new(first_page + 2 * i as i32)).collect();
     pdf.catalog(catalog).pages(tree);
@@ -361,6 +431,10 @@ pub fn render_invoice(inv: &InvoicePdf) -> Vec<u8> {
             let mut fonts = res.fonts();
             fonts.pair(REGULAR, font);
             fonts.pair(BOLD, font_bold);
+            fonts.finish();
+            if logo.is_some() {
+                res.x_objects().pair(LOGO, logo_id);
+            }
         }
         page.finish();
         pdf.stream(content_id, &content.finish());
@@ -393,6 +467,7 @@ mod tests {
             notes: None,
             footer: "Voorbeeld Apps · KvK 12345678".into(),
             document_title: "Factuur 2026-0001".into(),
+            logo: None,
         }
     }
 
@@ -410,6 +485,51 @@ mod tests {
         let bytes = render_invoice(&sample(60));
         let pages = bytes.windows(10).filter(|w| w == b"/Type /Pag").count();
         assert!(pages >= 3, "expected several pages, got {pages}");
+    }
+
+    /// A JPEG header only (APP0 + SOF0); enough for `jpeg_info` and for embedding tests.
+    fn jpeg_header(w: u16, h: u16, components: u8) -> Vec<u8> {
+        let mut d = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+        d.extend_from_slice(b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0");
+        let len = 8 + 3 * components as u16;
+        d.extend_from_slice(&[0xFF, 0xC0]);
+        d.extend_from_slice(&len.to_be_bytes());
+        d.push(8);
+        d.extend_from_slice(&h.to_be_bytes());
+        d.extend_from_slice(&w.to_be_bytes());
+        d.push(components);
+        for c in 0..components {
+            d.extend_from_slice(&[c + 1, 0x11, 0]);
+        }
+        d
+    }
+
+    #[test]
+    fn reads_jpeg_size_and_rejects_cmyk_and_non_jpeg() {
+        assert_eq!(
+            jpeg_info(&jpeg_header(495, 395, 3)),
+            Some(JpegInfo {
+                width: 495,
+                height: 395,
+                components: 3
+            })
+        );
+        assert_eq!(jpeg_info(&jpeg_header(10, 20, 1)).map(|i| i.components), Some(1));
+        assert_eq!(jpeg_info(&jpeg_header(10, 20, 4)), None);
+        assert_eq!(jpeg_info(b"\x89PNG\r\n"), None);
+        assert_eq!(jpeg_info(&[0xFF, 0xD8, 0xFF]), None);
+    }
+
+    #[test]
+    fn embeds_logo_only_when_valid() {
+        let mut inv = sample(1);
+        inv.logo = Some(jpeg_header(495, 395, 3));
+        let bytes = render_invoice(&inv);
+        assert!(bytes.windows(9).any(|w| w == b"DCTDecode"));
+        assert!(bytes.windows(4).any(|w| w == b"/Im1"));
+        inv.logo = Some(b"not an image".to_vec());
+        let bytes = render_invoice(&inv);
+        assert!(!bytes.windows(4).any(|w| w == b"/Im1"));
     }
 
     #[test]

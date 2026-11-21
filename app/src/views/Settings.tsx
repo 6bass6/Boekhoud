@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type BackupInfo, type Company, type VatRegime } from "../api";
+import { api, fileToBase64, type BackupInfo, type Company, type VatRegime } from "../api";
 import { useLoad } from "../hooks";
 import { monthNames, todayIso } from "../money";
 import { UpdateNotice } from "../components/UpdateNotice";
@@ -48,7 +48,7 @@ export function Periods({ year }: { year: number }) {
 const emptyCompany: Company = {
   iban: null, email: null, payment_term_days: 30,
   legal_name: "", trade_name: null, kvk_number: null, vat_number: null,
-  address: null, postal_code: null, city: null, country: "NL",
+  address: null, postal_code: null, city: null, country: "NL", logo_document_id: null,
 };
 
 export function Settings() {
@@ -94,6 +94,10 @@ export function Settings() {
       </div>
       <button className="primary" onClick={() => report(api.saveCompany(company), "Ondernemingsgegevens opgeslagen.")}>Opslaan</button>
 
+      <h3>Logo op facturen</h3>
+      <Logo documentId={loaded.data?.logo_document_id ?? null} canSet={!!loaded.data}
+            onChange={(p, ok) => report(p.then(loaded.reload), ok)} />
+
       <h3>Btw-regime</h3>
       <p>Vandaag: <strong>{regime.data === "kor" ? "Kleineondernemersregeling (KOR)" : regime.data === "regular" ? "Regulier" : "…"}</strong></p>
       <div className="form-grid">
@@ -112,6 +116,37 @@ export function Settings() {
 
       <Backups />
     </section>
+  );
+}
+
+function Logo({ documentId, canSet, onChange }: {
+  documentId: string | null;
+  canSet: boolean;
+  onChange: (p: Promise<unknown>, ok: string) => void;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    setSrc(null);
+    if (documentId) api.documentContent(documentId).then((c) => setSrc(`data:image/jpeg;base64,${c.data_base64}`)).catch(() => {});
+  }, [documentId]);
+
+  return (
+    <>
+      {src && <p><img src={src} alt="Huidig logo" style={{ maxHeight: 100, maxWidth: 200, border: "1px solid #ddd" }} /></p>}
+      {!documentId && <p className="muted small">Nog geen logo.</p>}
+      {!canSet && <p className="muted small">Sla eerst de ondernemingsgegevens op.</p>}
+      <label>{documentId ? "Ander logo kiezen (JPG)" : "Logo kiezen (JPG)"}{" "}
+        <input type="file" accept=".jpg,.jpeg,image/jpeg" disabled={!canSet} onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) onChange(fileToBase64(file).then((b) => api.setCompanyLogo(file.name, b)), "Logo opgeslagen.");
+        }} />
+      </label>
+      {documentId && <button onClick={() => onChange(api.removeCompanyLogo(), "Logo verwijderd.")}>Logo verwijderen</button>}
+      <p className="muted small">
+        Het logo komt bovenaan in het midden van nieuwe facturen. Al uitgegeven facturen blijven zoals ze zijn.
+      </p>
+    </>
   );
 }
 

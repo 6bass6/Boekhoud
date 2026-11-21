@@ -278,6 +278,7 @@ fn save_company(state: State<AppState>, company: Company) -> CmdResult<()> {
         iban: non_empty(company.iban),
         email: non_empty(company.email),
         payment_term_days: company.payment_term_days,
+        logo_document_id: None, // ignored by save_company; see set_company_logo
     };
     with_ledger(&state, |l| l.save_company(&company))
 }
@@ -413,6 +414,8 @@ pub fn run() {
             invoicing::attach_purchase_documents,
             invoicing::register_purchase_payment,
             invoicing::upload_document,
+            invoicing::set_company_logo,
+            invoicing::remove_company_logo,
             invoicing::document_content,
             invoicing::open_document,
             platforms::import_platform_file,
