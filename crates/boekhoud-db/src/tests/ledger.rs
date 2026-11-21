@@ -378,7 +378,7 @@ fn periods_report_closed_months() {
 
 #[test]
 fn company_logo_is_kept_apart_from_the_form_and_frozen_on_issued_invoices() {
-    let mut l = Ledger::open_in_memory().unwrap();
+    let (mut l, _dir) = ledger_with_docs();
     let doc = l.add_document(b"\xFF\xD8 fake jpeg", "logo.jpg", "logo").unwrap();
     // No company yet, unknown document: refused.
     assert!(l.set_company_logo(Some(&doc.id)).is_err());
