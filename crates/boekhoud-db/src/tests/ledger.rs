@@ -377,6 +377,48 @@ fn periods_report_closed_months() {
 }
 
 #[test]
+fn company_logo_is_kept_apart_from_the_form_and_frozen_on_issued_invoices() {
+    let (mut l, _dir) = ledger_with_docs();
+    let doc = l.add_document(b"\xFF\xD8 fake jpeg", "logo.jpg", "logo").unwrap();
+    // No company yet, unknown document: refused.
+    assert!(l.set_company_logo(Some(&doc.id)).is_err());
+    complete_company(&mut l);
+    assert!(l.set_company_logo(Some("missing")).is_err());
+
+    l.set_company_logo(Some(&doc.id)).unwrap();
+    let mut co = l.company().unwrap().unwrap();
+    assert_eq!(co.logo_document_id.as_deref(), Some(doc.id.as_str()));
+    // Saving the form (which does not carry the logo) keeps it.
+    co.logo_document_id = None;
+    co.city = Some("Zwolle".into());
+    l.save_company(&co).unwrap();
+    assert_eq!(
+        l.company().unwrap().unwrap().logo_document_id.as_deref(),
+        Some(doc.id.as_str())
+    );
+
+    // An issued invoice freezes the logo; removing it later does not change that invoice.
+    let c = customer(&mut l, None);
+    let date = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
+    let inv = l.create_sales_invoice(&invoice_input(&c, date, "V21")).unwrap();
+    l.issue_sales_invoice(&inv).unwrap();
+    l.set_company_logo(None).unwrap();
+    assert_eq!(l.company().unwrap().unwrap().logo_document_id, None);
+    let seller = l.sales_invoice(&inv).unwrap().seller.unwrap();
+    assert_eq!(seller.logo_document_id.as_deref(), Some(doc.id.as_str()));
+
+    let n: i64 = l
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM audit_log WHERE entity_type='company' AND action='set_logo'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 2);
+}
+
+#[test]
 fn company_is_saved_and_audited() {
     let mut l = Ledger::open_in_memory().unwrap();
     assert!(l.company().unwrap().is_none());

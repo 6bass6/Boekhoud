@@ -123,6 +123,7 @@ export interface Company {
   postal_code: string | null;
   city: string | null;
   country: string;
+  logo_document_id: string | null;
 }
 
 export interface NewLine {
@@ -437,6 +438,8 @@ export const api = {
   verifyChain: () => invoke<ChainStatus>("verify_chain"),
   company: () => invoke<Company | null>("company"),
   saveCompany: (company: Company) => invoke<void>("save_company", { company }),
+  setCompanyLogo: (filename: string, dataBase64: string) => invoke<void>("set_company_logo", { filename, dataBase64 }),
+  removeCompanyLogo: () => invoke<void>("remove_company_logo"),
   vatRegime: (date: string) => invoke<VatRegime>("vat_regime", { date }),
   setVatRegime: (validFrom: string, regime: VatRegime, note: string) =>
     invoke<void>("set_vat_regime", { validFrom, regime, note }),

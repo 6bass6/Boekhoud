@@ -386,6 +386,10 @@ fn invoice_pdf(l: &Ledger, d: &SalesInvoiceDetail) -> boekhoud_db::Result<Invoic
             if credit { "Creditnota" } else { "Factuur" },
             d.summary.invoice_number.clone().unwrap_or_default()
         ),
+        logo: match &company.logo_document_id {
+            Some(id) => Some(l.document_bytes(id)?.1),
+            None => None,
+        },
     })
 }
 
@@ -534,6 +538,29 @@ pub fn upload_document(
         return Err("Bestand is groter dan 50 MB.".into());
     }
     with_ledger(&state, |l| l.add_document(&bytes, &filename, &document_type))
+}
+
+/// Store a JPEG as the logo for new invoices. Issued invoices keep the logo they were issued with.
+#[tauri::command]
+pub fn set_company_logo(state: State<AppState>, filename: String, data_base64: String) -> CmdResult<()> {
+    let bytes = b64()
+        .decode(data_base64.as_bytes())
+        .map_err(|_| "Bestand kon niet worden gelezen.".to_string())?;
+    if bytes.len() > 5 * 1024 * 1024 {
+        return Err("Het logo is groter dan 5 MB.".into());
+    }
+    if boekhoud_pdf::jpeg_info(&bytes).is_none() {
+        return Err("Kies een JPG-bestand (kleur of grijstinten) als logo.".into());
+    }
+    with_ledger(&state, |l| {
+        let doc = l.add_document(&bytes, &filename, "logo")?;
+        l.set_company_logo(Some(&doc.id))
+    })
+}
+
+#[tauri::command]
+pub fn remove_company_logo(state: State<AppState>) -> CmdResult<()> {
+    with_ledger(&state, |l| l.set_company_logo(None))
 }
 
 #[derive(Serialize)]

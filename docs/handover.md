@@ -41,7 +41,7 @@ full test suite + the NSIS/MSI installer build on Windows. The installer is uplo
 | Screen | What it does |
 |---|---|
 | **Overzicht** | Dashboard: revenue, costs, result, bank, receivables, payables, VAT position, to-do list, hours progress, monthly chart. Tiles link to the screens behind them. |
-| **Verkoopfacturen** | Draft → issue sales invoices for talks. Issue checks Dutch invoice requirements, assigns a gapless number per year, posts to VRK, freezes seller/buyer details, archives the PDF. Credit notes, manual payments, PDF preview. |
+| **Verkoopfacturen** | Draft → issue sales invoices for talks. Issue checks Dutch invoice requirements, assigns a gapless number per year, posts to VRK, freezes seller/buyer details (including the logo), archives the PDF. Credit notes, manual payments, PDF preview. Optional company logo (JPG, set in Instellingen) centred at the top. |
 | **Inkoopfacturen** | Register purchase invoices with any number of documents (invoice, receipt, …) shown as tabs next to the form; VAT incl. reverse charge; "paid privately" option; duplicate detection; attach more documents later (links are permanent); first uploaded file is read automatically (UBL exactly, PDF/photo via local Windows OCR) to fill empty fields; payments; "Gegevens wijzigen" (description, supplier number, due date) and "Corrigeren…" (reverse + re-register in one transaction, accounting-rules S11). |
 | **Platformen** | Import Apple financial report / Google Play earnings report; enter Apple euro proceeds per currency; book as one PLT entry; revenue per app. |
 | **Bank** | Import CAMT.053 / CSV; skip duplicates; proposals; process into entries (invoice, platform payout, account with VAT split, private, ignore); reconciliation with the statement balance. |
@@ -52,7 +52,7 @@ full test suite + the NSIS/MSI installer build on Windows. The installer is uplo
 | **Uren** | Time entries and timer; urencriterium (1,225 h) progress and weekly pace. |
 | **Activa** | Asset register; monthly straight-line depreciation posting. |
 | **Winst & verlies / Balans** | Per-year P&L (1 January up to a chosen date) and balance sheet at a date, with prior-year and current-year results as computed equity lines; "Exporteren (CSV)" writes to `exports/` in the data folder and shows the path. |
-| **Proef- en saldibalans / Grootboekkaart / Perioden / Rekeningschema / Instellingen** | Reports, period closing with audited reopening, chart of accounts, company details, VAT regime, manual backup, hash-chain integrity check. |
+| **Proef- en saldibalans / Grootboekkaart / Perioden / Rekeningschema / Instellingen** | Reports, period closing with audited reopening, chart of accounts, company details and invoice logo, VAT regime, manual backup, hash-chain integrity check. |
 
 ### Integrity guarantees (enforced in code **and** by SQLite triggers)
 
@@ -101,7 +101,7 @@ crates/boekhoud-db       SQLite storage; Ledger is the single entry point
   examples/demo_data.rs  Fictional demo database covering all modules
 
 crates/boekhoud-import   Pure parsers: apple.rs, google.rs, bank.rs (CAMT.053 + CSV), text.rs helpers
-crates/boekhoud-pdf      Invoice PDF with standard Helvetica (WinAnsi), wrapping, pagination
+crates/boekhoud-pdf      Invoice PDF with standard Helvetica (WinAnsi), wrapping, pagination, optional JPEG logo (embedded as-is)
 
 app/src-tauri/src        Thin Tauri layer: lib.rs (state, core commands, data dir), invoicing.rs,
                          platforms.rs, bank.rs, tax.rs, income_tax.rs, backup.rs, format.rs (Dutch formatting), messages.rs (Dutch errors)
